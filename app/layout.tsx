@@ -1,7 +1,30 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import { Roboto, Roboto_Mono } from "next/font/google";
 import { ThemeProvider } from "./providers";
 import "./globals.css";
+
+const moderat = localFont({
+  src: [
+    { path: "../public/fonts/Moderat-Light.otf", weight: "300", style: "normal" },
+    { path: "../public/fonts/Moderat-Regular.otf", weight: "400", style: "normal" },
+    { path: "../public/fonts/Moderat-Medium.otf", weight: "500", style: "normal" },
+    { path: "../public/fonts/Moderat-Bold.otf", weight: "700", style: "normal" },
+  ],
+  variable: "--font-moderat",
+  display: "swap",
+});
+
+const moderatMono = localFont({
+  src: [
+    { path: "../public/fonts/Moderat-Mono-Light.otf", weight: "300", style: "normal" },
+    { path: "../public/fonts/Moderat-Mono-Regular.otf", weight: "400", style: "normal" },
+    { path: "../public/fonts/Moderat-Mono-Medium.otf", weight: "500", style: "normal" },
+    { path: "../public/fonts/Moderat-Mono-Bold.otf", weight: "700", style: "normal" },
+  ],
+  variable: "--font-moderat-mono",
+  display: "swap",
+});
 
 const roboto = Roboto({
   subsets: ["latin"],
@@ -31,7 +54,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${roboto.variable} ${robotoMono.variable} antialiased`}
+        className={`${moderat.variable} ${moderatMono.variable} ${roboto.variable} ${robotoMono.variable} antialiased`}
       >
         <ThemeProvider>{children}</ThemeProvider>
       </body>
