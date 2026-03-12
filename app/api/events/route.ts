@@ -47,7 +47,8 @@ export async function GET(req: NextRequest) {
     }
 
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT * FROM defi_events ${where} ORDER BY created_at DESC LIMIT ?`,
+      `SELECT *, TIMESTAMPDIFF(SECOND, created_at, NOW()) as seconds_ago
+       FROM defi_events ${where} ORDER BY created_at DESC LIMIT ?`,
       [...queryParams, limit]
     );
 

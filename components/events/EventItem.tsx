@@ -2,7 +2,15 @@
 
 import type { DefiEvent } from "@/lib/types";
 import { EVENT_TYPE_CONFIG } from "@/lib/constants";
-import { truncateAddress, relativeTime, formatUsd } from "@/lib/format";
+import { truncateAddress, formatUsd } from "@/lib/format";
+
+function formatSecondsAgo(seconds: number | undefined): string {
+  if (seconds === undefined || seconds === null || seconds < 0) return "just now";
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
 
 interface EventItemProps {
   event: DefiEvent;
@@ -61,7 +69,7 @@ export function EventItem({ event }: EventItemProps) {
               </span>
             )}
             <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-              {relativeTime(event.created_at)}
+              {formatSecondsAgo((event as Record<string, unknown>).seconds_ago as number)}
             </span>
           </div>
         </div>
