@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/refresh/metrics",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/refresh/prices",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/refresh/pools",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

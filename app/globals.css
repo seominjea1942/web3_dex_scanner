@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+/* Dark theme (default) */
+:root {
+  --bg-primary: #0a0e14;
+  --bg-secondary: #0f1520;
+  --bg-card: #111927;
+  --bg-hover: #162032;
+  --text-primary: #e8edf5;
+  --text-secondary: #8a9bb5;
+  --text-muted: #5a6b82;
+  --accent-teal: #2dd4bf;
+  --accent-green: #22c55e;
+  --accent-red: #ef4444;
+  --accent-blue: #3b82f6;
+  --accent-orange: #f59e0b;
+  --accent-purple: #a855f7;
+  --border: rgba(96, 140, 255, 0.1);
+  --border-hover: rgba(96, 140, 255, 0.2);
+  --event-swap: #6b7280;
+  --event-whale: #3b82f6;
+  --event-new-pool: #22c55e;
+  --event-liquidity: #a855f7;
+  --event-smart-money: #14b8a6;
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --bg-primary: #f8fafb;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f0f2f5;
+  --text-primary: #1a1f2e;
+  --text-secondary: #4a5568;
+  --text-muted: #9ca3af;
+  --accent-teal: #0d9488;
+  --accent-green: #16a34a;
+  --accent-red: #dc2626;
+  --accent-blue: #2563eb;
+  --accent-orange: #d97706;
+  --accent-purple: #9333ea;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.15);
+  --event-swap: #6b7280;
+  --event-whale: #2563eb;
+  --event-new-pool: #16a34a;
+  --event-liquidity: #9333ea;
+  --event-smart-money: #0d9488;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-moderat), var(--font-roboto), system-ui, sans-serif;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.font-mono {
+  font-family: var(--font-moderat-mono), var(--font-roboto-mono), monospace;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 3px;
+}
+
+/* Pulse animation for status dots */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Ticker scroll animation */
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-ticker {
+  animation: ticker-scroll 30s linear infinite;
+}
+
+/* Fade in animation */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
