@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
+import { replayOneEvent } from "@/lib/event-replay";
 import type { RowDataPacket } from "mysql2";
 
 export const runtime = "nodejs";
@@ -9,6 +10,18 @@ export async function GET(req: NextRequest) {
   try {
     const db = getPool();
     const params = req.nextUrl.searchParams;
+
+    // Lazy replay: if last event is older than 3s, generate new ones
+    const [ageRows] = await db.query<RowDataPacket[]>(
+      `SELECT TIMESTAMPDIFF(SECOND, MAX(created_at), NOW()) as age FROM defi_events`
+    );
+    const age = (ageRows[0] as Record<string, unknown>)?.age as number | null;
+    if (age === null || age > 3) {
+      const count = 1 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < count; i++) {
+        await replayOneEvent();
+      }
+    }
 
     const type = params.get("type"); // comma-separated: "whale,new_pool,liquidity,smart_money"
     const limit = Math.min(100, Math.max(1, parseInt(params.get("limit") || "30")));

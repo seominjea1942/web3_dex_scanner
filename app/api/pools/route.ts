@@ -75,8 +75,19 @@ export async function GET(req: NextRequest) {
       [...queryParams, limit, offset]
     );
 
+    // Apply small live price jitter to simulate real-time ticks
+    const pools = rows.map((row) => {
+      const jitter5m = (Math.random() - 0.5) * 0.04; // ±0.02%
+      const jitter1h = (Math.random() - 0.5) * 0.02;
+      return {
+        ...row,
+        price_change_5m: (Number(row.price_change_5m) + jitter5m).toFixed(2),
+        price_change_1h: (Number(row.price_change_1h) + jitter1h).toFixed(2),
+      };
+    });
+
     return NextResponse.json({
-      pools: rows,
+      pools,
       total,
       page,
       limit,

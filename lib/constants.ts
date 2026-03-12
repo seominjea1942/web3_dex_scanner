@@ -4,7 +4,7 @@ export const POLLING_INTERVALS = {
   METRICS: 5_000, // 5s
   EVENTS: 5_000, // 5s
   STATS: 30_000, // 30s
-  TABLE: 60_000, // 60s
+  TABLE: 10_000, // 10s
 } as const;
 
 export const EVENT_TYPE_CONFIG = {
