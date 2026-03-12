@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
       `SELECT TIMESTAMPDIFF(SECOND, MAX(created_at), NOW()) as age FROM defi_events`
     );
     const age = (ageRows[0] as Record<string, unknown>)?.age as number | null;
-    if (age === null || age > 3) {
+    if (age === null || age > 8) {
       const count = 1 + Math.floor(Math.random() * 2);
       for (let i = 0; i < count; i++) {
         await replayOneEvent();

@@ -67,7 +67,7 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
       <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: "var(--border)" }}>
         <div>
           <div className="flex items-center gap-2">
-            <span style={{ color: "var(--accent-teal)" }}>🔹</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 20, color: "var(--accent-teal)" }}>diamond</span>
             <span className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>TiDB Performance</span>
           </div>
           <p className="text-xs mt-1 max-w-2xl" style={{ color: "var(--text-muted)" }}>
@@ -79,9 +79,7 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
           className="p-2 rounded-lg shrink-0"
           style={{ color: "var(--text-muted)" }}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>expand_more</span>
         </button>
       </div>
 
@@ -195,7 +193,7 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
                 { name: "Flink", color: "#3b82f6" },
               ].map((item) => (
                 <div key={item.name} className="flex items-center gap-2 text-xs" style={{ color: item.color }}>
-                  <span>✕</span>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>cancel</span>
                   <span>{item.name}</span>
                 </div>
               ))}

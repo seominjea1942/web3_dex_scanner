@@ -39,7 +39,7 @@ export function EventItem({ event }: EventItemProps) {
               }}
             />
           ) : (
-            <span className="text-base">{config.emoji}</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 20, color: config.color }}>{config.icon}</span>
           )}
         </div>
 

@@ -18,14 +18,12 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
 
   return (
     <div className="relative flex-1 min-w-[200px] max-w-sm">
-      <svg
-        className="absolute left-3 top-1/2 -translate-y-1/2"
-        width="14" height="14" viewBox="0 0 14 14" fill="none"
-        stroke="var(--text-muted)" strokeWidth="1.5"
+      <span
+        className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2"
+        style={{ fontSize: 16, color: "var(--text-muted)" }}
       >
-        <circle cx="6" cy="6" r="5" />
-        <path d="M10 10l3.5 3.5" strokeLinecap="round" />
-      </svg>
+        search
+      </span>
       <input
         type="text"
         value={local}
@@ -44,7 +42,7 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
           className="absolute right-3 top-1/2 -translate-y-1/2"
           style={{ color: "var(--text-muted)" }}
         >
-          ✕
+          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>close</span>
         </button>
       )}
     </div>

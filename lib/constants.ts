@@ -1,40 +1,40 @@
 export const POLLING_INTERVALS = {
   PRICES: 60_000, // 60s
   POOLS: 300_000, // 5min
-  METRICS: 5_000, // 5s
-  EVENTS: 5_000, // 5s
-  STATS: 30_000, // 30s
-  TABLE: 10_000, // 10s
+  METRICS: 15_000, // 15s (was 5s)
+  EVENTS: 10_000, // 10s (was 5s)
+  STATS: 60_000, // 60s (was 30s)
+  TABLE: 30_000, // 30s (was 10s)
 } as const;
 
 export const EVENT_TYPE_CONFIG = {
   swap: {
     label: "Swap",
-    emoji: "🔄",
+    icon: "swap_horiz",
     color: "#6b7280",
     bgColor: "rgba(107, 114, 128, 0.15)",
   },
   whale: {
     label: "Whale",
-    emoji: "🐋",
+    icon: "waves",
     color: "#3b82f6",
     bgColor: "rgba(59, 130, 246, 0.15)",
   },
   new_pool: {
     label: "New Pool",
-    emoji: "🆕",
+    icon: "add_circle",
     color: "#22c55e",
     bgColor: "rgba(34, 197, 94, 0.15)",
   },
   liquidity: {
     label: "Liquidity",
-    emoji: "💧",
+    icon: "water_drop",
     color: "#a855f7",
     bgColor: "rgba(168, 85, 247, 0.15)",
   },
   smart_money: {
     label: "Smart Money",
-    emoji: "💎",
+    icon: "diamond",
     color: "#14b8a6",
     bgColor: "rgba(20, 184, 166, 0.15)",
   },

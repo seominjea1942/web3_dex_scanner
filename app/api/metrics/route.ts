@@ -21,7 +21,7 @@ export async function GET() {
     );
 
     const age = (lastRows[0] as Record<string, unknown>)?.age as number | null;
-    if (age === null || age > 5) {
+    if (age === null || age > 12) {
       await generateMetrics(db);
     }
 

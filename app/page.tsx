@@ -7,12 +7,14 @@ import { Banner } from "@/components/layout/Banner";
 import { PoolTable } from "@/components/scanner/PoolTable";
 import { EventPanel } from "@/components/events/EventPanel";
 import { EventTicker } from "@/components/events/EventTicker";
+import { MobileEventSheet } from "@/components/events/MobileEventSheet";
 import { PerformanceBar } from "@/components/performance/PerformanceBar";
 import { PerformanceExpanded } from "@/components/performance/PerformanceExpanded";
 
 export default function Home() {
   const bp = useBreakpoint();
   const [perfExpanded, setPerfExpanded] = useState(false);
+  const [eventsOpen, setEventsOpen] = useState(false);
 
   return (
     <main className="min-h-screen flex flex-col" style={{ background: "var(--bg-primary)" }}>
@@ -20,15 +22,18 @@ export default function Home() {
       <Banner />
 
       {/* Mobile event ticker */}
-      {bp !== "desktop" && <EventTicker />}
+      {bp !== "desktop" && !eventsOpen && <EventTicker onClick={() => setEventsOpen(true)} />}
 
       {/* Main content */}
       <div className="flex flex-1 pb-12">
-        {/* Pool Table */}
-        <PoolTable />
-
-        {/* Desktop event sidebar */}
-        {bp === "desktop" && <EventPanel />}
+        {bp !== "desktop" && eventsOpen ? (
+          <MobileEventSheet onClose={() => setEventsOpen(false)} />
+        ) : (
+          <>
+            <PoolTable />
+            {bp === "desktop" && <EventPanel />}
+          </>
+        )}
       </div>
 
       {/* Performance bar */}

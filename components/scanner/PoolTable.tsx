@@ -30,7 +30,7 @@ export function PoolTable() {
       sort,
       order: "desc",
       page: String(page),
-      limit: "20",
+      limit: "10",
     });
     if (search) params.set("search", search);
     if (minVolume > 0) params.set("min_volume", String(minVolume));
@@ -71,7 +71,7 @@ export function PoolTable() {
 
       {/* Table header */}
       <div className="px-4 pb-2 flex items-center gap-2">
-        <span style={{ color: "var(--accent-teal)" }}>✧</span>
+        <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--accent-teal)" }}>auto_awesome</span>
         <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
           {sortLabel[sort]}
         </span>
@@ -128,7 +128,7 @@ export function PoolTable() {
                   <PoolRow
                     key={pool.id}
                     pool={pool}
-                    rank={(page - 1) * 20 + i + 1}
+                    rank={(page - 1) * 10 + i + 1}
                     breakpoint={bp}
                   />
                 ))}
@@ -140,7 +140,7 @@ export function PoolTable() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-4 py-3 text-sm" style={{ color: "var(--text-muted)" }}>
           <span>
-            Showing {(page - 1) * 20 + 1}-{Math.min(page * 20, data?.total ?? 0)} of {data?.total ?? 0} pools
+            Showing {(page - 1) * 10 + 1}-{Math.min(page * 10, data?.total ?? 0)} of {data?.total ?? 0} pools
           </span>
           <div className="flex gap-1">
             {Array.from({ length: Math.min(totalPages, 7) }).map((_, i) => (

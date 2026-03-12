@@ -27,7 +27,7 @@ export function CopyButton({ text }: CopyButtonProps) {
       }}
       title={text}
     >
-      {copied ? "✓ Copied!" : truncateAddress(text)}
+      {copied ? <><span className="material-symbols-outlined align-middle" style={{ fontSize: 12 }}>check</span> Copied!</> : truncateAddress(text)}
     </button>
   );
 }

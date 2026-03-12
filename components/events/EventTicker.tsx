@@ -5,7 +5,11 @@ import { POLLING_INTERVALS, EVENT_TYPE_CONFIG } from "@/lib/constants";
 import { truncateAddress, formatUsd } from "@/lib/format";
 import type { DefiEvent } from "@/lib/types";
 
-export function EventTicker() {
+interface EventTickerProps {
+  onClick?: () => void;
+}
+
+export function EventTicker({ onClick }: EventTickerProps) {
   const { data: events } = usePolling<DefiEvent[]>(
     () => fetch("/api/events?limit=10").then((r) => r.json()).then((d) => d.events),
     POLLING_INTERVALS.EVENTS
@@ -17,8 +21,9 @@ export function EventTicker() {
 
   return (
     <div
-      className="border-b overflow-hidden"
+      className="border-b overflow-hidden cursor-pointer"
       style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
+      onClick={onClick}
     >
       <div className="flex items-center px-3 py-2 gap-2">
         <span className="flex items-center gap-1.5 shrink-0">
@@ -35,7 +40,7 @@ export function EventTicker() {
                   {event.token_logo_url ? (
                     <img src={event.token_logo_url} alt="" className="w-4 h-4 rounded-full" />
                   ) : (
-                    <span>{config.emoji}</span>
+                    <span className="material-symbols-outlined" style={{ fontSize: 16, color: config.color }}>{config.icon}</span>
                   )}
                   <span className="font-mono" style={{ color: "var(--text-muted)" }}>
                     {truncateAddress(event.wallet_address)}

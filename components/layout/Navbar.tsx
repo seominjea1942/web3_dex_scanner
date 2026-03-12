@@ -72,9 +72,7 @@ export function Navbar() {
           >
             <span className="w-4 h-4 rounded-full" style={{ background: "linear-gradient(135deg, #9945FF, #14F195)" }} />
             Solana
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <path d="M3 5L6 8L9 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>expand_more</span>
           </button>
           {showChainMenu && (
             <div
@@ -112,15 +110,9 @@ export function Navbar() {
           style={{ color: "var(--text-secondary)" }}
           title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
         >
-          {theme === "dark" ? (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 1a.5.5 0 01.5.5v1a.5.5 0 01-1 0v-1A.5.5 0 018 1zm0 11a.5.5 0 01.5.5v1a.5.5 0 01-1 0v-1A.5.5 0 018 12zm7-4a.5.5 0 010 1h-1a.5.5 0 010-1h1zM3 8a.5.5 0 010 1H2a.5.5 0 010-1h1zm9.354-3.354a.5.5 0 010 .708l-.708.707a.5.5 0 01-.707-.707l.707-.708a.5.5 0 01.708 0zM5.354 10.646a.5.5 0 010 .708l-.708.707a.5.5 0 01-.707-.707l.707-.708a.5.5 0 01.708 0zM12.354 11.354a.5.5 0 000-.708l-.708-.707a.5.5 0 00-.707.707l.707.708a.5.5 0 00.708 0zM5.354 5.354a.5.5 0 000-.708l-.708-.707a.5.5 0 00-.707.707l.707.708a.5.5 0 00.708 0zM8 4a4 4 0 100 8 4 4 0 000-8z"/>
-            </svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M6 .278a.768.768 0 01.08.858 7.208 7.208 0 00-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 01.81.316.733.733 0 01-.031.893A8.349 8.349 0 018.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 016 .278z"/>
-            </svg>
-          )}
+          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+            {theme === "dark" ? "light_mode" : "dark_mode"}
+          </span>
         </button>
       </div>
 

@@ -37,9 +37,7 @@ export function SortDropdown({ value, onChange }: SortDropdownProps) {
         style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
       >
         Rank by: <span style={{ color: "var(--text-primary)" }}>{current?.label}</span>
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-          <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
+        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>expand_more</span>
       </button>
       {open && (
         <div

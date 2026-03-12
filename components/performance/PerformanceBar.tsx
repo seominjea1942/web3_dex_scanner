@@ -44,7 +44,7 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
       <div className="flex items-center px-4 py-2 gap-4 overflow-x-auto">
         {/* Label */}
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-sm" style={{ color: "var(--accent-teal)" }}>🔹</span>
+          <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--accent-teal)" }}>diamond</span>
           <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
             TiDB Performance
           </span>
@@ -79,7 +79,7 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
             {/* Total Records */}
             <div className="flex items-center gap-2 shrink-0">
               <LiveCounter value={totalRows + 1000000} format={(n) => `${n.toLocaleString()} rows`} increment={3} />
-              <span className="text-xs" style={{ color: "var(--accent-green)" }}>↑</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 14, color: "var(--accent-green)" }}>trending_up</span>
             </div>
           </>
         )}
@@ -126,9 +126,7 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
           style={{ color: "var(--text-muted)" }}
           title="Expand performance panel"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 9l4-4 4 4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>expand_less</span>
         </button>
       </div>
     </div>
