@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     );
 
     // Fetch from DexScreener
-    const addresses = [...new Set(pools.map((p) => p.token_base_id))];
+    const addresses = Array.from(new Set(pools.map((p) => p.token_base_id)));
     let updated = 0;
 
     for (const addr of addresses.slice(0, 5)) {
@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
               price_change_1h = ?,
               price_change_6h = ?,
               price_change_24h = ?,
+              volume_1h = ?,
               volume_24h = ?,
               liquidity_usd = ?
              WHERE id = ?`,
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest) {
               pair.priceChange?.h1 ?? 0,
               pair.priceChange?.h6 ?? 0,
               pair.priceChange?.h24 ?? 0,
+              pair.volume?.h1 ?? 0,
               pair.volume?.h24 ?? 0,
               pair.liquidity?.usd ?? 0,
               pair.pairAddress,

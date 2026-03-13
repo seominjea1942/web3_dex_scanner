@@ -19,6 +19,7 @@ export interface Pool {
   price_change_1h: number;
   price_change_6h: number;
   price_change_24h: number;
+  volume_1h: number;
   volume_24h: number;
   liquidity_usd: number;
   market_cap: number;
@@ -77,8 +78,10 @@ export type SortField =
   | "volume_24h"
   | "liquidity_usd"
   | "price_change_24h"
-  | "trending";
+  | "trending"
+  | "newest";
 export type SortOrder = "asc" | "desc";
+export type FilterType = "hot" | "gainers" | "losers" | null;
 export type EventType =
   | "swap"
   | "whale"

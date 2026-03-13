@@ -1,16 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/refresh/metrics",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/refresh/prices",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/refresh/pools",
-      "schedule": "*/5 * * * *"
+      "path": "/api/refresh/cleanup",
+      "schedule": "0 3 * * *"
     }
   ]
 }

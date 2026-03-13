@@ -15,8 +15,7 @@ export async function GET(req: NextRequest) {
     const search = params.get("search") || "";
     const page = Math.max(1, parseInt(params.get("page") || "1"));
     const limit = Math.min(100, Math.max(1, parseInt(params.get("limit") || "20")));
-    const minVolume = parseFloat(params.get("min_volume") || "0");
-    const maxAge = params.get("max_age"); // "24h" for new pools
+    const filter = params.get("filter"); // "hot" | "gainers" | "losers"
 
     const offset = (page - 1) * limit;
 
@@ -28,8 +27,25 @@ export async function GET(req: NextRequest) {
       market_cap: "p.market_cap",
       txns_24h: "p.txns_24h",
       trending: "(p.volume_24h / GREATEST(p.liquidity_usd, 1))",
+      newest: "p.pool_created_at",
+      velocity: "(p.volume_1h / GREATEST(p.volume_24h / 24, 1))",
     };
-    const sortCol = sortMap[sort] || "p.volume_24h";
+
+    // Determine effective sort: filter may set a default sort
+    let effectiveSort = sort;
+    let effectiveOrder = order;
+    if (filter === "hot" && sort === "volume_24h") {
+      effectiveSort = "velocity";
+      effectiveOrder = "DESC";
+    } else if (filter === "gainers" && sort === "volume_24h") {
+      effectiveSort = "price_change_24h";
+      effectiveOrder = "DESC";
+    } else if (filter === "losers" && sort === "volume_24h") {
+      effectiveSort = "price_change_24h";
+      effectiveOrder = "ASC";
+    }
+
+    const sortCol = sortMap[effectiveSort] || "p.volume_24h";
 
     let where = "WHERE 1=1";
     const queryParams: (string | number)[] = [];
@@ -40,13 +56,13 @@ export async function GET(req: NextRequest) {
       queryParams.push(s, s, s, s);
     }
 
-    if (minVolume > 0) {
-      where += " AND p.volume_24h >= ?";
-      queryParams.push(minVolume);
-    }
-
-    if (maxAge === "24h") {
-      where += " AND p.pool_created_at >= NOW() - INTERVAL 24 HOUR";
+    // Filter conditions
+    if (filter === "hot") {
+      where += " AND (p.volume_1h / GREATEST(p.volume_24h / 24, 1)) > 1.5";
+    } else if (filter === "gainers") {
+      where += " AND p.price_change_24h > 0";
+    } else if (filter === "losers") {
+      where += " AND p.price_change_24h < 0";
     }
 
     // Count query
@@ -70,19 +86,35 @@ export async function GET(req: NextRequest) {
        LEFT JOIN tokens t_base ON p.token_base_id = t_base.id
        LEFT JOIN tokens t_quote ON p.token_quote_id = t_quote.id
        ${where}
-       ORDER BY ${sortCol} ${order}
+       ORDER BY ${sortCol} ${effectiveOrder}
        LIMIT ? OFFSET ?`,
       [...queryParams, limit, offset]
     );
 
-    // Apply small live price jitter to simulate real-time ticks
+    // Apply live jitter to simulate real-time ticks
     const pools = rows.map((row) => {
-      const jitter5m = (Math.random() - 0.5) * 0.04; // ±0.02%
-      const jitter1h = (Math.random() - 0.5) * 0.02;
+      const price = Number(row.price_usd);
+      const priceJitter = price * (Math.random() - 0.5) * 0.002; // ±0.1%
+      const vol = Number(row.volume_24h);
+      const volJitter = vol * (Math.random() - 0.5) * 0.01; // ±0.5%
+      const liq = Number(row.liquidity_usd);
+      const liqJitter = liq * (Math.random() - 0.5) * 0.004; // ±0.2%
+      const mcap = Number(row.market_cap);
+      const mcapJitter = mcap * (Math.random() - 0.5) * 0.002; // ±0.1%
+      const makers = Number(row.makers);
+      const makersJitter = Math.round((Math.random() - 0.5) * Math.max(4, makers * 0.002));
       return {
         ...row,
-        price_change_5m: (Number(row.price_change_5m) + jitter5m).toFixed(2),
-        price_change_1h: (Number(row.price_change_1h) + jitter1h).toFixed(2),
+        price_usd: (price + priceJitter).toFixed(price < 1 ? 6 : 2),
+        price_change_5m: (Number(row.price_change_5m) + (Math.random() - 0.5) * 0.08).toFixed(2),
+        price_change_1h: (Number(row.price_change_1h) + (Math.random() - 0.5) * 0.06).toFixed(2),
+        price_change_6h: (Number(row.price_change_6h) + (Math.random() - 0.5) * 0.04).toFixed(2),
+        price_change_24h: (Number(row.price_change_24h) + (Math.random() - 0.5) * 0.02).toFixed(2),
+        volume_24h: (vol + volJitter).toFixed(2),
+        liquidity_usd: (liq + liqJitter).toFixed(2),
+        market_cap: (mcap + mcapJitter).toFixed(2),
+        makers: makers + makersJitter,
+        txns_24h: (Number(row.txns_24h) + makersJitter),
       };
     });
 

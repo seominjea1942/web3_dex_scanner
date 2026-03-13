@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
+import { generateSpikeMetrics } from "@/lib/spike-generator";
 import type { RowDataPacket } from "mysql2";
 
 export const runtime = "nodejs";
@@ -63,15 +64,11 @@ export async function GET() {
 }
 
 async function generateMetrics(db: ReturnType<typeof getPool>) {
-  const wt = 25000 + Math.sin(Date.now() * 0.001) * 3000 + (Math.random() - 0.5) * 4000;
-  const spike = Math.random() > 0.95 ? Math.random() * 5 : 0;
-  const ql = 3.5 + Math.sin(Date.now() * 0.0005) * 0.8 + (Math.random() - 0.5) * 1 + spike;
-  const qps = 13000 + Math.sin(Date.now() * 0.0008) * 2000 + (Math.random() - 0.5) * 2000;
-  const conn = 2000 + Math.sin(Date.now() * 0.0006) * 300 + (Math.random() - 0.5) * 400;
+  const m = generateSpikeMetrics();
 
   await db.execute(
     `INSERT INTO performance_metrics (metric_type, value, recorded_at) VALUES
      ('write_throughput', ?, NOW()), ('query_latency', ?, NOW()), ('qps', ?, NOW()), ('active_connections', ?, NOW())`,
-    [Math.round(wt), Math.round(ql * 100) / 100, Math.round(qps), Math.round(conn)]
+    [m.wt, m.ql, m.qps, m.conn]
   );
 }

@@ -5,13 +5,15 @@ interface SparklineProps {
   color?: string;
   width?: number;
   height?: number;
+  domainMin?: number;
+  domainMax?: number;
 }
 
-export function Sparkline({ data, color = "var(--accent-teal)", width = 80, height = 24 }: SparklineProps) {
+export function Sparkline({ data, color = "var(--accent-teal)", width = 80, height = 24, domainMin, domainMax }: SparklineProps) {
   if (!data || data.length < 2) return null;
 
-  const min = Math.min(...data);
-  const max = Math.max(...data);
+  const min = domainMin ?? Math.min(...data);
+  const max = domainMax ?? Math.max(...data);
   const range = max - min || 1;
 
   const points = data
@@ -28,7 +30,7 @@ export function Sparkline({ data, color = "var(--accent-teal)", width = 80, heig
   const areaPath = `M0,${height} L${points.split(" ").map((p) => p).join(" L")} L${width},${height} Z`;
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="shrink-0">
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="shrink-0 pointer-events-none">
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.3" />

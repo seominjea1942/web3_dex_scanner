@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
+import { generateSpikeMetrics } from "@/lib/spike-generator";
 import { replayOneEvent } from "@/lib/event-replay";
 
 export const runtime = "nodejs";
@@ -16,17 +17,13 @@ export async function POST(req: NextRequest) {
   try {
     const db = getPool();
 
-    // Generate metrics
-    const wt = 25000 + Math.sin(Date.now() * 0.001) * 3000 + (Math.random() - 0.5) * 4000;
-    const spike = Math.random() > 0.95 ? Math.random() * 5 : 0;
-    const ql = 3.5 + Math.sin(Date.now() * 0.0005) * 0.8 + (Math.random() - 0.5) * 1 + spike;
-    const qps = 13000 + Math.sin(Date.now() * 0.0008) * 2000 + (Math.random() - 0.5) * 2000;
-    const conn = 2000 + Math.sin(Date.now() * 0.0006) * 300 + (Math.random() - 0.5) * 400;
+    // Generate spike-aware metrics
+    const m = generateSpikeMetrics();
 
     await db.execute(
       `INSERT INTO performance_metrics (metric_type, value, recorded_at) VALUES
        ('write_throughput', ?, NOW()), ('query_latency', ?, NOW()), ('qps', ?, NOW()), ('active_connections', ?, NOW())`,
-      [Math.round(wt), Math.round(ql * 100) / 100, Math.round(qps), Math.round(conn)]
+      [m.wt, m.ql, m.qps, m.conn]
     );
 
     // Replay 1-3 events

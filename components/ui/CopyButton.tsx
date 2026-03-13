@@ -18,16 +18,25 @@ export function CopyButton({ text }: CopyButtonProps) {
   };
 
   return (
-    <button
-      onClick={handleCopy}
-      className="font-mono text-xs px-1.5 py-0.5 rounded transition-colors"
-      style={{
-        color: copied ? "var(--accent-green)" : "var(--text-muted)",
-        background: copied ? "rgba(34, 197, 94, 0.1)" : "transparent",
-      }}
-      title={text}
-    >
-      {copied ? <><span className="material-symbols-outlined align-middle" style={{ fontSize: 12 }}>check</span> Copied!</> : truncateAddress(text)}
-    </button>
+    <span className="inline-flex items-center gap-1">
+      <span
+        className="font-mono text-sm"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {truncateAddress(text)}
+      </span>
+      <button
+        onClick={handleCopy}
+        className="p-0.5 rounded transition-colors"
+        style={{
+          color: copied ? "var(--accent-green)" : "var(--text-muted)",
+        }}
+        title={copied ? "Copied!" : "Copy address"}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+          {copied ? "check" : "content_copy"}
+        </span>
+      </button>
+    </span>
   );
 }

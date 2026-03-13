@@ -177,12 +177,13 @@ async function insertPool(
   await db.execute(
     `INSERT INTO pools (id, token_base_id, token_quote_id, pair_label, dex_name, pool_type, chain,
       price_usd, price_change_5m, price_change_1h, price_change_6h, price_change_24h,
-      volume_24h, liquidity_usd, market_cap, makers, txns_24h, pool_created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'solana', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      volume_1h, volume_24h, liquidity_usd, market_cap, makers, txns_24h, pool_created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'solana', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
       price_usd = VALUES(price_usd), price_change_5m = VALUES(price_change_5m),
       price_change_1h = VALUES(price_change_1h), price_change_6h = VALUES(price_change_6h),
-      price_change_24h = VALUES(price_change_24h), volume_24h = VALUES(volume_24h),
+      price_change_24h = VALUES(price_change_24h), volume_1h = VALUES(volume_1h),
+      volume_24h = VALUES(volume_24h),
       liquidity_usd = VALUES(liquidity_usd), market_cap = VALUES(market_cap),
       txns_24h = VALUES(txns_24h)`,
     [
@@ -197,6 +198,7 @@ async function insertPool(
       pair.priceChange?.h1 ?? 0,
       pair.priceChange?.h6 ?? 0,
       pair.priceChange?.h24 ?? 0,
+      pair.volume?.h1 ?? 0,
       pair.volume?.h24 ?? 0,
       pair.liquidity?.usd ?? 0,
       pair.marketCap ?? pair.fdv ?? 0,
@@ -399,34 +401,160 @@ async function batchInsertEvents(
 }
 
 async function seedPerformanceMetrics(db: ReturnType<typeof getPool>) {
+  // Clear old flat data
+  await db.execute("TRUNCATE TABLE performance_metrics");
+
   const now = Date.now();
-  const oneHourAgo = now - 60 * 60 * 1000;
-  const INTERVAL = 5000; // 5 seconds
-  const dataPoints = Math.floor((now - oneHourAgo) / INTERVAL); // ~720
+  const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+  const ONE_HOUR = 60 * 60 * 1000;
+
+  // Define spike events across 7 days (minutes ago from now)
+  // Each spike: { startMinAgo, peakValue, rampMin, peakMin }
+  const spikeEvents = [
+    // Within last 1H — large spike for immediate visual impact
+    { startMinAgo: 45, peakValue: 45000, rampMin: 5, peakMin: 15 },
+    // Within last 6H
+    { startMinAgo: 150, peakValue: 35000, rampMin: 5, peakMin: 12 },
+    { startMinAgo: 280, peakValue: 25000, rampMin: 4, peakMin: 10 },
+    // Within last 24H
+    { startMinAgo: 480, peakValue: 35000, rampMin: 5, peakMin: 15 },
+    { startMinAgo: 720, peakValue: 45000, rampMin: 5, peakMin: 12 },
+    { startMinAgo: 1100, peakValue: 25000, rampMin: 4, peakMin: 10 },
+    // Older (24H–7D)
+    { startMinAgo: 1600, peakValue: 35000, rampMin: 5, peakMin: 15 },
+    { startMinAgo: 2200, peakValue: 25000, rampMin: 4, peakMin: 10 },
+    { startMinAgo: 3000, peakValue: 45000, rampMin: 5, peakMin: 15 },
+    { startMinAgo: 4500, peakValue: 25000, rampMin: 4, peakMin: 10 },
+    { startMinAgo: 6000, peakValue: 35000, rampMin: 5, peakMin: 12 },
+    { startMinAgo: 8500, peakValue: 25000, rampMin: 4, peakMin: 10 },
+  ];
+
+  const BASELINE_WRITE = 15000;
+  const BASELINE_CONN = 1500;
+  const BASELINE_QPS = 10000;
+
+  // Helper: compute metric values at a given timestamp
+  function computeMetrics(ts: number): { wt: number; ql: number; conn: number; qps: number } {
+    const minAgo = (now - ts) / 60000;
+
+    let writeMultiplier = 0; // additional write above baseline
+    let connMultiplier = 0;
+    let qpsMultiplier = 0;
+    let inSpike = false;
+
+    for (const spike of spikeEvents) {
+      const spikeStart = spike.startMinAgo;
+      const rampUpEnd = spikeStart - spike.rampMin;
+      const peakEnd = rampUpEnd - spike.peakMin;
+      const rampDownEnd = peakEnd - spike.rampMin;
+
+      if (minAgo <= spikeStart && minAgo > rampUpEnd) {
+        // Ramp up
+        const progress = (spikeStart - minAgo) / spike.rampMin;
+        const extra = (spike.peakValue - BASELINE_WRITE) * progress;
+        writeMultiplier = Math.max(writeMultiplier, extra);
+        connMultiplier = Math.max(connMultiplier, (2000 * progress));
+        qpsMultiplier = Math.max(qpsMultiplier, (4000 * progress));
+        inSpike = true;
+      } else if (minAgo <= rampUpEnd && minAgo > peakEnd) {
+        // Peak
+        writeMultiplier = Math.max(writeMultiplier, spike.peakValue - BASELINE_WRITE);
+        connMultiplier = Math.max(connMultiplier, 2000);
+        qpsMultiplier = Math.max(qpsMultiplier, 4000);
+        inSpike = true;
+      } else if (minAgo <= peakEnd && minAgo > rampDownEnd) {
+        // Ramp down
+        const progress = (minAgo - rampDownEnd) / spike.rampMin;
+        const extra = (spike.peakValue - BASELINE_WRITE) * progress;
+        writeMultiplier = Math.max(writeMultiplier, extra);
+        connMultiplier = Math.max(connMultiplier, (2000 * progress));
+        qpsMultiplier = Math.max(qpsMultiplier, (4000 * progress));
+        inSpike = true;
+      }
+    }
+
+    const wt = BASELINE_WRITE + writeMultiplier + (Math.random() - 0.5) * 4000;
+    const conn = BASELINE_CONN + connMultiplier + (Math.random() - 0.5) * 400;
+    const qps = BASELINE_QPS + qpsMultiplier + (Math.random() - 0.5) * 2000;
+
+    // Query latency STAYS FLAT — the HTAP proof
+    // Tiny bump during spike (3.0 → 3.3ms) but never dramatic
+    const ql = inSpike
+      ? 3.3 + (Math.random() - 0.5) * 0.6  // 3.0–3.6ms during spike
+      : 3.0 + (Math.random() - 0.5) * 0.6;  // 2.7–3.3ms normal
+
+    return {
+      wt: Math.max(1000, Math.round(wt)),
+      ql: Math.max(0.5, Math.round(ql * 100) / 100),
+      conn: Math.max(100, Math.round(conn)),
+      qps: Math.max(1000, Math.round(qps)),
+    };
+  }
 
   const BATCH_SIZE = 200;
   let batch: Array<[string, number, Date]> = [];
   let inserted = 0;
 
-  for (let i = 0; i < dataPoints; i++) {
-    const timestamp = new Date(oneHourAgo + i * INTERVAL);
+  // Recent 1 hour: 5-second intervals (~720 points)
+  const oneHourAgo = now - ONE_HOUR;
+  for (let ts = oneHourAgo; ts <= now; ts += 5000) {
+    const m = computeMetrics(ts);
+    const timestamp = new Date(ts);
+    batch.push(["write_throughput", m.wt, timestamp]);
+    batch.push(["query_latency", m.ql, timestamp]);
+    batch.push(["qps", m.qps, timestamp]);
+    batch.push(["active_connections", m.conn, timestamp]);
 
-    // Write throughput: ~20,000-30,000 rows/sec with natural variation
-    const wt = 25000 + Math.sin(i * 0.1) * 3000 + (Math.random() - 0.5) * 4000;
-    batch.push(["write_throughput", Math.round(wt), timestamp]);
+    if (batch.length >= BATCH_SIZE) {
+      await batchInsertMetrics(db, batch);
+      inserted += batch.length;
+      batch = [];
+    }
+  }
 
-    // Query latency: ~2-5ms with occasional spikes
-    const spike = Math.random() > 0.95 ? Math.random() * 5 : 0;
-    const ql = 3.5 + Math.sin(i * 0.05) * 0.8 + (Math.random() - 0.5) * 1 + spike;
-    batch.push(["query_latency", Math.round(ql * 100) / 100, timestamp]);
+  // 1H–6H ago: 30-second intervals
+  const sixHoursAgo = now - 6 * ONE_HOUR;
+  for (let ts = sixHoursAgo; ts < oneHourAgo; ts += 30000) {
+    const m = computeMetrics(ts);
+    const timestamp = new Date(ts);
+    batch.push(["write_throughput", m.wt, timestamp]);
+    batch.push(["query_latency", m.ql, timestamp]);
+    batch.push(["qps", m.qps, timestamp]);
+    batch.push(["active_connections", m.conn, timestamp]);
 
-    // QPS: ~10,000-16,000
-    const qps = 13000 + Math.sin(i * 0.08) * 2000 + (Math.random() - 0.5) * 2000;
-    batch.push(["qps", Math.round(qps), timestamp]);
+    if (batch.length >= BATCH_SIZE) {
+      await batchInsertMetrics(db, batch);
+      inserted += batch.length;
+      batch = [];
+    }
+  }
 
-    // Active connections: ~1,500-2,500
-    const conn = 2000 + Math.sin(i * 0.06) * 300 + (Math.random() - 0.5) * 400;
-    batch.push(["active_connections", Math.round(conn), timestamp]);
+  // 6H–24H ago: 2-minute intervals
+  const oneDayAgo = now - 24 * ONE_HOUR;
+  for (let ts = oneDayAgo; ts < sixHoursAgo; ts += 120000) {
+    const m = computeMetrics(ts);
+    const timestamp = new Date(ts);
+    batch.push(["write_throughput", m.wt, timestamp]);
+    batch.push(["query_latency", m.ql, timestamp]);
+    batch.push(["qps", m.qps, timestamp]);
+    batch.push(["active_connections", m.conn, timestamp]);
+
+    if (batch.length >= BATCH_SIZE) {
+      await batchInsertMetrics(db, batch);
+      inserted += batch.length;
+      batch = [];
+    }
+  }
+
+  // 24H–7D ago: 15-minute intervals
+  const sevenDaysAgo = now - SEVEN_DAYS;
+  for (let ts = sevenDaysAgo; ts < oneDayAgo; ts += 900000) {
+    const m = computeMetrics(ts);
+    const timestamp = new Date(ts);
+    batch.push(["write_throughput", m.wt, timestamp]);
+    batch.push(["query_latency", m.ql, timestamp]);
+    batch.push(["qps", m.qps, timestamp]);
+    batch.push(["active_connections", m.conn, timestamp]);
 
     if (batch.length >= BATCH_SIZE) {
       await batchInsertMetrics(db, batch);
@@ -440,7 +568,9 @@ async function seedPerformanceMetrics(db: ReturnType<typeof getPool>) {
     inserted += batch.length;
   }
 
-  console.log(`  Seeded ${inserted} metric data points (${dataPoints} intervals × 4 metrics).`);
+  const totalPoints = inserted / 4;
+  console.log(`  Seeded ${inserted} metric rows (${totalPoints} time points × 4 metrics) across 7 days.`);
+  console.log(`  Spike events: ${spikeEvents.length} (small/medium/large intensity).`);
 }
 
 async function batchInsertMetrics(

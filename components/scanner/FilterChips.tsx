@@ -1,50 +1,59 @@
 "use client";
 
+import type { FilterType } from "@/lib/types";
+
 interface FilterChipsProps {
-  minVolume: number;
-  maxAge: string | null;
-  onMinVolumeChange: (v: number) => void;
-  onMaxAgeChange: (v: string | null) => void;
+  activeFilter: FilterType;
+  onFilterChange: (f: FilterType) => void;
 }
 
-const VOLUME_FILTERS = [
-  { label: "Volume > $100K", value: 100000 },
-  { label: "Volume > $1M", value: 1000000 },
+const FILTERS: { key: FilterType & string; label: string; icon: string; activeColor: string; activeBg: string }[] = [
+  {
+    key: "hot",
+    label: "Hot",
+    icon: "local_fire_department",
+    activeColor: "var(--accent-orange)",
+    activeBg: "rgba(255, 141, 40, 0.15)",
+  },
+  {
+    key: "gainers",
+    label: "Gainers",
+    icon: "trending_up",
+    activeColor: "var(--accent-green)",
+    activeBg: "rgba(48, 209, 88, 0.15)",
+  },
+  {
+    key: "losers",
+    label: "Losers",
+    icon: "trending_down",
+    activeColor: "var(--accent-red)",
+    activeBg: "rgba(255, 66, 89, 0.15)",
+  },
 ];
 
-export function FilterChips({
-  minVolume,
-  maxAge,
-  onMinVolumeChange,
-  onMaxAgeChange,
-}: FilterChipsProps) {
+export function FilterChips({ activeFilter, onFilterChange }: FilterChipsProps) {
   return (
     <div className="flex items-center gap-1.5">
-      {VOLUME_FILTERS.map((f) => (
-        <button
-          key={f.value}
-          onClick={() => onMinVolumeChange(minVolume === f.value ? 0 : f.value)}
-          className="px-2.5 py-1 rounded-full text-xs border transition-colors"
-          style={{
-            borderColor: minVolume === f.value ? "var(--accent-teal)" : "var(--border)",
-            background: minVolume === f.value ? "rgba(45, 212, 191, 0.1)" : "transparent",
-            color: minVolume === f.value ? "var(--accent-teal)" : "var(--text-muted)",
-          }}
-        >
-          {f.label}
-        </button>
-      ))}
-      <button
-        onClick={() => onMaxAgeChange(maxAge === "24h" ? null : "24h")}
-        className="px-2.5 py-1 rounded-full text-xs border transition-colors"
-        style={{
-          borderColor: maxAge === "24h" ? "var(--accent-teal)" : "var(--border)",
-          background: maxAge === "24h" ? "rgba(45, 212, 191, 0.1)" : "transparent",
-          color: maxAge === "24h" ? "var(--accent-teal)" : "var(--text-muted)",
-        }}
-      >
-        New (&lt;24h)
-      </button>
+      {FILTERS.map((f) => {
+        const isActive = activeFilter === f.key;
+        return (
+          <button
+            key={f.key}
+            onClick={() => onFilterChange(isActive ? null : f.key)}
+            className="h-8 px-2.5 rounded-lg text-xs border transition-colors flex items-center gap-1"
+            style={{
+              borderColor: isActive ? f.activeColor : "var(--border)",
+              background: isActive ? f.activeBg : "transparent",
+              color: isActive ? f.activeColor : "var(--text-muted)",
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+              {f.icon}
+            </span>
+            {f.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

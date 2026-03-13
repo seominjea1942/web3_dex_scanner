@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
 
     const type = params.get("type"); // comma-separated: "whale,new_pool,liquidity,smart_money"
     const limit = Math.min(100, Math.max(1, parseInt(params.get("limit") || "30")));
+    const offset = Math.max(0, parseInt(params.get("offset") || "0"));
     const minAmount = parseFloat(params.get("min_amount") || "0");
 
     let where = "WHERE 1=1";
@@ -48,8 +49,8 @@ export async function GET(req: NextRequest) {
 
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT *, TIMESTAMPDIFF(SECOND, created_at, NOW()) as seconds_ago
-       FROM defi_events ${where} ORDER BY created_at DESC LIMIT ?`,
-      [...queryParams, limit]
+       FROM defi_events ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      [...queryParams, limit, offset]
     );
 
     return NextResponse.json({ events: rows });

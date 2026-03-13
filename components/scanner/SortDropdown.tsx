@@ -11,8 +11,8 @@ interface SortDropdownProps {
 const OPTIONS: { value: SortField; label: string }[] = [
   { value: "volume_24h", label: "Volume 24h" },
   { value: "liquidity_usd", label: "Liquidity" },
-  { value: "price_change_24h", label: "Gainers" },
   { value: "trending", label: "Trending" },
+  { value: "newest", label: "Newest" },
 ];
 
 export function SortDropdown({ value, onChange }: SortDropdownProps) {
@@ -33,7 +33,7 @@ export function SortDropdown({ value, onChange }: SortDropdownProps) {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border"
+        className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs border"
         style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
       >
         Rank by: <span style={{ color: "var(--text-primary)" }}>{current?.label}</span>

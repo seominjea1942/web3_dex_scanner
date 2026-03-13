@@ -10,6 +10,7 @@ import { EventTicker } from "@/components/events/EventTicker";
 import { MobileEventSheet } from "@/components/events/MobileEventSheet";
 import { PerformanceBar } from "@/components/performance/PerformanceBar";
 import { PerformanceExpanded } from "@/components/performance/PerformanceExpanded";
+import { ToastContainer } from "@/components/ui/Toast";
 
 export default function Home() {
   const bp = useBreakpoint();
@@ -25,13 +26,19 @@ export default function Home() {
       {bp !== "desktop" && !eventsOpen && <EventTicker onClick={() => setEventsOpen(true)} />}
 
       {/* Main content */}
-      <div className="flex flex-1 pb-12">
+      <div className={bp === "desktop" ? "relative" : "flex flex-1 pb-12"}>
         {bp !== "desktop" && eventsOpen ? (
           <MobileEventSheet onClose={() => setEventsOpen(false)} />
         ) : (
           <>
-            <PoolTable />
-            {bp === "desktop" && <EventPanel />}
+            <div className={bp === "desktop" ? "mr-80 pb-12" : "flex-1 min-w-0"}>
+              <PoolTable />
+            </div>
+            {bp === "desktop" && (
+              <div className="absolute top-0 right-0 bottom-0 w-80">
+                <EventPanel />
+              </div>
+            )}
           </>
         )}
       </div>
@@ -42,6 +49,7 @@ export default function Home() {
       ) : (
         <PerformanceBar onExpand={() => setPerfExpanded(true)} />
       )}
+      <ToastContainer />
     </main>
   );
 }

@@ -10,11 +10,13 @@ interface SearchBarProps {
 export function SearchBar({ value, onChange }: SearchBarProps) {
   const [local, setLocal] = useState(value);
   const timer = useRef<NodeJS.Timeout>();
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
-    timer.current = setTimeout(() => onChange(local), 300);
+    timer.current = setTimeout(() => onChangeRef.current(local), 300);
     return () => clearTimeout(timer.current);
-  }, [local, onChange]);
+  }, [local]);
 
   return (
     <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -29,7 +31,7 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
         value={local}
         onChange={(e) => setLocal(e.target.value)}
         placeholder="Search tokens, pools, or addresses..."
-        className="w-full pl-9 pr-8 py-2 rounded-lg text-sm border outline-none transition-colors"
+        className="w-full h-8 pl-9 pr-8 rounded-lg text-sm border outline-none transition-colors"
         style={{
           background: "var(--bg-card)",
           borderColor: "var(--border)",
@@ -38,7 +40,7 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
       />
       {local && (
         <button
-          onClick={() => { setLocal(""); onChange(""); }}
+          onClick={() => { setLocal(""); onChangeRef.current(""); }}
           className="absolute right-3 top-1/2 -translate-y-1/2"
           style={{ color: "var(--text-muted)" }}
         >

@@ -32,16 +32,13 @@ export function EventTicker({ onClick }: EventTickerProps) {
         </span>
 
         <div className="overflow-hidden flex-1">
-          <div className="animate-ticker flex gap-6 whitespace-nowrap">
+          <div className="animate-ticker flex gap-12 whitespace-nowrap">
             {[...items, ...items].map((event, i) => {
               const config = EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.swap;
               return (
                 <span key={`${event.id}-${i}`} className="flex items-center gap-1.5 text-xs">
-                  {event.token_logo_url ? (
-                    <img src={event.token_logo_url} alt="" className="w-4 h-4 rounded-full" />
-                  ) : (
-                    <span className="material-symbols-outlined" style={{ fontSize: 16, color: config.color }}>{config.icon}</span>
-                  )}
+                  <span className="w-1 h-1 rounded-full shrink-0" style={{ background: "var(--text-muted)", opacity: 0.4 }} />
+                  <img src={config.img} alt={config.label} className="w-4 h-4" />
                   <span className="font-mono" style={{ color: "var(--text-muted)" }}>
                     {truncateAddress(event.wallet_address)}
                   </span>

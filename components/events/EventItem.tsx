@@ -2,7 +2,8 @@
 
 import type { DefiEvent } from "@/lib/types";
 import { EVENT_TYPE_CONFIG } from "@/lib/constants";
-import { truncateAddress, formatUsd } from "@/lib/format";
+import { truncateAddress } from "@/lib/format";
+import { toast } from "@/components/ui/Toast";
 
 function formatSecondsAgo(seconds: number | undefined): string {
   if (seconds === undefined || seconds === null || seconds < 0) return "just now";
@@ -14,33 +15,28 @@ function formatSecondsAgo(seconds: number | undefined): string {
 
 interface EventItemProps {
   event: DefiEvent;
+  isNew?: boolean;
 }
 
-export function EventItem({ event }: EventItemProps) {
+export function EventItem({ event, isNew }: EventItemProps) {
   const config = EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.swap;
 
   return (
     <div
-      className="px-4 py-2.5 border-b transition-colors animate-fade-in"
+      className={`px-4 py-2.5 border-b transition-colors cursor-pointer${isNew ? " animate-fade-in event-rainbow-glow" : ""}`}
       style={{ borderColor: "var(--border)" }}
       onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+      onClick={() => toast("Event detail page coming soon 🚀")}
     >
-      <div className="flex items-start gap-2">
-        {/* Token logo or emoji */}
-        <div className="shrink-0 mt-0.5">
-          {event.token_logo_url ? (
-            <img
-              src={event.token_logo_url}
-              alt={event.token_symbol}
-              className="w-6 h-6 rounded-full"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-          ) : (
-            <span className="material-symbols-outlined" style={{ fontSize: 20, color: config.color }}>{config.icon}</span>
-          )}
+      <div className="flex items-center gap-2">
+        {/* Event type icon */}
+        <div className="shrink-0">
+          <img
+            src={config.img}
+            alt={config.label}
+            className="w-6 h-6"
+          />
         </div>
 
         {/* Content */}
@@ -58,20 +54,13 @@ export function EventItem({ event }: EventItemProps) {
             <span className="font-mono text-xs" style={{ color: "var(--text-muted)" }}>
               {truncateAddress(event.wallet_address)}
             </span>
-          </div>
-          <p className="text-xs mt-0.5 truncate" style={{ color: "var(--text-secondary)" }}>
-            {event.description}
-          </p>
-          <div className="flex items-center gap-2 mt-0.5">
-            {event.amount_usd > 0 && (
-              <span className="font-mono text-xs" style={{ color: "var(--text-primary)" }}>
-                {formatUsd(Number(event.amount_usd))}
-              </span>
-            )}
-            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-              {formatSecondsAgo((event as Record<string, unknown>).seconds_ago as number)}
+            <span className="text-[10px] ml-auto shrink-0" style={{ color: "var(--text-muted)" }}>
+              {formatSecondsAgo((event as unknown as Record<string, unknown>).seconds_ago as number)}
             </span>
           </div>
+          <p className="text-xs mt-0.5 truncate" style={{ color: "var(--text-primary)" }}>
+            {event.description}
+          </p>
         </div>
       </div>
     </div>

@@ -32,6 +32,9 @@ export function MobileEventSheet({ onClose }: MobileEventSheetProps) {
   const [showFilter, setShowFilter] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+  const prevEventIdsRef = useRef<Set<number>>(new Set());
+  const lastProcessedRef = useRef<DefiEvent[] | null>(null);
+  const [newEventIds, setNewEventIds] = useState<Set<number>>(new Set());
 
   const fetcher = () => {
     const params = new URLSearchParams({ limit: "50" });
@@ -45,6 +48,25 @@ export function MobileEventSheet({ onClose }: MobileEventSheetProps) {
   };
 
   const { data: events } = usePolling(fetcher, POLLING_INTERVALS.EVENTS);
+
+  // Track newly appeared events for rainbow glow effect
+  useEffect(() => {
+    if (!events || events === lastProcessedRef.current) return;
+    lastProcessedRef.current = events;
+    const currentIds = new Set(events.map((e) => e.id));
+    const prev = prevEventIdsRef.current;
+    prevEventIdsRef.current = currentIds;
+    if (prev.size === 0) return;
+    const fresh = new Set<number>();
+    for (const e of events) {
+      if (!prev.has(e.id)) fresh.add(e.id);
+    }
+    if (fresh.size > 0) {
+      setNewEventIds(fresh);
+      const timer = setTimeout(() => setNewEventIds(new Set()), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [events]);
 
   // Close filter dropdown on outside click
   useEffect(() => {
@@ -111,7 +133,7 @@ export function MobileEventSheet({ onClose }: MobileEventSheetProps) {
       {/* Event list */}
       <div ref={listRef} className="flex-1 overflow-y-auto">
         {(events ?? []).map((event) => (
-          <MobileEventItem key={event.id} event={event} />
+          <MobileEventItem key={event.id} event={event} isNew={newEventIds.has(event.id)} />
         ))}
         {(!events || events.length === 0) && (
           <div className="px-4 py-12 text-center text-xs" style={{ color: "var(--text-muted)" }}>
@@ -123,33 +145,23 @@ export function MobileEventSheet({ onClose }: MobileEventSheetProps) {
   );
 }
 
-function MobileEventItem({ event }: { event: DefiEvent }) {
+function MobileEventItem({ event, isNew }: { event: DefiEvent; isNew?: boolean }) {
   const config = EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.swap;
-  const secondsAgo = (event as Record<string, unknown>).seconds_ago as number;
+  const secondsAgo = (event as unknown as Record<string, unknown>).seconds_ago as number;
 
   return (
     <div
-      className="px-4 py-3.5 border-b"
+      className={`px-4 py-3.5 border-b${isNew ? " event-rainbow-glow" : ""}`}
       style={{ borderColor: "var(--border)" }}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
         {/* Icon */}
-        <div
-          className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 mt-0.5"
-          style={{ background: config.bgColor }}
-        >
-          {event.token_logo_url ? (
-            <img
-              src={event.token_logo_url}
-              alt={event.token_symbol}
-              className="w-10 h-10 rounded-full"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-            />
-          ) : (
-            <span className="material-symbols-outlined" style={{ fontSize: 22, color: config.color }}>
-              {config.icon}
-            </span>
-          )}
+        <div className="shrink-0">
+          <img
+            src={config.img}
+            alt={config.label}
+            className="w-8 h-8"
+          />
         </div>
 
         {/* Content */}
@@ -159,14 +171,6 @@ function MobileEventItem({ event }: { event: DefiEvent }) {
               <span className="font-mono">{truncateAddress(event.wallet_address)}</span>
               {"  "}
               {event.description}
-              {event.amount_usd > 0 && (
-                <>
-                  {"  "}
-                  <span className="font-mono font-medium" style={{ color: "var(--accent-teal)" }}>
-                    {formatUsd(Number(event.amount_usd))}
-                  </span>
-                </>
-              )}
             </p>
             <span className="text-[11px] shrink-0 mt-0.5" style={{ color: "var(--text-muted)" }}>
               {formatSecondsAgo(secondsAgo)}
