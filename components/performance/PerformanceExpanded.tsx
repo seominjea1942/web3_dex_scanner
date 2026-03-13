@@ -75,7 +75,7 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
   return (
     <div>
       <div
-        className="fixed inset-0 z-[60]"
+        className="fixed inset-0 z-[60] animate-perf-overlay"
         style={{
           background: "var(--expanded-overlay)",
           backdropFilter: "blur(12px)",
@@ -84,7 +84,7 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
         onClick={onCollapse}
       />
       <div
-        className="fixed inset-x-0 bottom-0 z-[70] overflow-y-auto"
+        className="fixed inset-x-0 bottom-0 z-[70] overflow-y-auto animate-perf-slide-up"
         style={{
           background: "var(--bg-secondary)",
           maxHeight: "85vh",

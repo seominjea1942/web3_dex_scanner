@@ -84,8 +84,8 @@ export function Navbar() {
           </button>
           {showChainMenu && (
             <div
-              className="absolute right-0 mt-1 rounded-lg border py-1 z-50 whitespace-nowrap"
-              style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}
+              className="fixed sm:absolute right-2 sm:right-0 mt-1 rounded-lg border py-1 z-50 whitespace-nowrap w-[calc(100vw-16px)] sm:w-auto max-w-[280px]"
+              style={{ background: "var(--bg-card)", borderColor: "var(--border)", boxShadow: "0 8px 24px rgba(0,0,0,0.3)" }}
             >
               {/* Solana — active */}
               <div

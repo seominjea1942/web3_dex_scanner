@@ -1,28 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { usePolling } from "@/hooks/usePolling";
-import { POLLING_INTERVALS } from "@/lib/constants";
-import { formatNumber } from "@/lib/format";
-
-interface Stats {
-  total_tokens: number;
-  total_pools: number;
-  tx_per_sec: number;
-  total_rows: number;
-}
-
 export function Banner() {
   const [dismissed, setDismissed] = useState(false);
 
-  const { data: stats } = usePolling<Stats>(
-    () => fetch("/api/stats").then((r) => r.json()),
-    POLLING_INTERVALS.STATS
-  );
-
   if (dismissed) return null;
-
-  const tokenCount = stats?.total_tokens ?? 3124;
 
   return (
     <div className="banner-upsell relative overflow-hidden border-b" style={{ borderColor: "var(--border)" }}>
@@ -34,7 +16,7 @@ export function Banner() {
         <p className="text-sm">
           <span className="banner-gradient-text font-semibold">Powered by one TiDB Essential instance.</span>{" "}
           <span style={{ color: "var(--text-secondary)" }}>
-            {formatNumber(tokenCount)} tokens. Streaming meets analytics — no separate cache, queue, or analytics database.
+            Streaming meets analytics — no separate cache, queue, or analytics database.
           </span>
         </p>
         <button
