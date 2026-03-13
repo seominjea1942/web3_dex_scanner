@@ -250,7 +250,7 @@ export function PoolTable() {
           activeFilter={activeFilter}
           onFilterChange={(f) => { setActiveFilter(f); setPage(1); }}
         />
-        <div className="ml-auto">
+        <div className={bp !== "mobile" ? "ml-auto" : ""}>
           <SortDropdown value={sort} onChange={(v) => { setSort(v); setPage(1); }} />
         </div>
       </div>
@@ -280,15 +280,9 @@ export function PoolTable() {
                   <th className="px-3 py-2 text-right font-medium" style={{ color: "var(--text-muted)" }}>6h</th>
                 </>
               )}
-              <th className="px-3 py-2 text-right font-medium" style={{ color: "var(--text-muted)" }}>
-                {bp === "mobile" ? "5m" : "24h"}
-              </th>
-              {bp !== "mobile" && (
-                <>
-                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap" style={{ color: "var(--text-muted)" }}>Volume 24h</th>
-                  <th className="px-3 py-2 text-right font-medium" style={{ color: "var(--text-muted)" }}>Liquidity</th>
-                </>
-              )}
+              <th className="px-3 py-2 text-right font-medium" style={{ color: "var(--text-muted)" }}>24h</th>
+              <th className="px-3 py-2 text-right font-medium whitespace-nowrap" style={{ color: "var(--text-muted)" }}>Volume 24h</th>
+              <th className="px-3 py-2 text-right font-medium" style={{ color: "var(--text-muted)" }}>Liquidity</th>
               {bp === "desktop" && (
                 <>
                   <th className="px-3 py-2 text-right font-medium" style={{ color: "var(--text-muted)" }}>MCap</th>

@@ -108,22 +108,18 @@ export function PoolRow({ pool, rank, breakpoint: bp }: PoolRowProps) {
         </>
       )}
 
-      {/* 24h or 5m change */}
+      {/* 24h change — always visible */}
       <td className="px-3 py-3 text-right">
-        <PriceChange value={bp === "mobile" ? Number(pool.price_change_5m) : Number(pool.price_change_24h)} />
+        <PriceChange value={Number(pool.price_change_24h)} />
       </td>
 
-      {/* Volume + Liquidity (tablet + desktop) */}
-      {bp !== "mobile" && (
-        <>
-          <td className="px-3 py-3 text-right font-mono text-sm" style={{ color: "var(--text-secondary)" }}>
-            {formatUsd(Number(pool.volume_24h))}
-          </td>
-          <td className="px-3 py-3 text-right font-mono text-sm" style={{ color: "var(--text-secondary)" }}>
-            {formatUsd(Number(pool.liquidity_usd))}
-          </td>
-        </>
-      )}
+      {/* Volume + Liquidity — always visible, scrollable on mobile */}
+      <td className="px-3 py-3 text-right font-mono text-sm" style={{ color: "var(--text-secondary)" }}>
+        {formatUsd(Number(pool.volume_24h))}
+      </td>
+      <td className="px-3 py-3 text-right font-mono text-sm" style={{ color: "var(--text-secondary)" }}>
+        {formatUsd(Number(pool.liquidity_usd))}
+      </td>
 
       {/* Desktop-only columns */}
       {bp === "desktop" && (
