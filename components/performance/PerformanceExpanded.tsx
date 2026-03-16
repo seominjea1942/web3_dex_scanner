@@ -141,10 +141,10 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
                 <MetricCard label="Tables & Indexes" value={`${wc.table_count} / ${wc.index_count}`} unit="tables · indexes" color="var(--text-primary)" />
               </>
             )}
-            <MetricCard label="Write Throughput" value={`${((m.write_throughput ?? 15000)).toLocaleString()}`} unit="rows/sec" data={spark.write_throughput} color="var(--accent-green)" />
-            <MetricCard label="Query Latency P99" value={`${(m.query_latency ?? 3.2).toFixed(1)}`} unit="ms" data={spark.query_latency} color="var(--accent-orange)" domainMin={0} domainMax={10} />
-            <MetricCard label="QPS" value={`${(m.qps ?? 10000).toLocaleString()}`} unit="" data={spark.qps} color="var(--accent-blue)" />
-            <MetricCard label="Active Connections" value={`${(m.active_connections ?? 1500).toLocaleString()}`} unit="" data={spark.active_connections} color="var(--accent-teal)" />
+            <MetricCard label="Write Throughput" value={`${((m.write_throughput ?? 15000)).toLocaleString()}`} unit="rows/sec" data={spark.write_throughput} color="var(--accent-green)" mobile={bp === "mobile"} />
+            <MetricCard label="Query Latency P99" value={`${(m.query_latency ?? 3.2).toFixed(1)}`} unit="ms" data={spark.query_latency} color="var(--accent-orange)" domainMin={0} domainMax={10} mobile={bp === "mobile"} />
+            <MetricCard label="QPS" value={`${(m.qps ?? 10000).toLocaleString()}`} unit="" data={spark.qps} color="var(--accent-blue)" mobile={bp === "mobile"} />
+            <MetricCard label="Active Connections" value={`${(m.active_connections ?? 1500).toLocaleString()}`} unit="" data={spark.active_connections} color="var(--accent-teal)" mobile={bp === "mobile"} />
             <MetricCard label="Total Records" value={`${(totalRows + 1000000).toLocaleString()}`} unit="rows" color="var(--accent-green)" />
             <MetricCard label="Uptime" value="99.97%" unit="" color="var(--accent-green)" />
           </div>
@@ -214,10 +214,10 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
           <div>
             <h3 className="font-bold mb-4 text-center" style={{ color: "var(--text-primary)", fontSize: 32 }}>What makes this possible?</h3>
             <div className={`grid gap-4 ${bp === "mobile" ? "grid-cols-2" : "grid-cols-4"}`}>
-              <ComparisonCard label="Services Required" before="7" after="3–4" afterUnit="Services" />
-              <ComparisonCard label="Data Scale" before="" after="100M+" afterUnit="Rows - single instance" />
-              <ComparisonCard label="Query Latency" before="~500ms" after="<5ms" afterUnit="" />
-              <ComparisonCard label="Infra Cost / Month" before="$2,400" after="$800" afterUnit="" isCurrency />
+              <ComparisonCard label="Services Required" before="7" after="3–4" afterUnit="Services" mobile={bp === "mobile"} />
+              <ComparisonCard label="Data Scale" before="" after="100M+" afterUnit="Rows – single instance" mobile={bp === "mobile"} />
+              <ComparisonCard label="Query Latency" before="~500ms" after="<5ms" afterUnit="" mobile={bp === "mobile"} />
+              <ComparisonCard label="Infra Cost / Month" before="$2,400" after="$800" afterUnit="" isCurrency mobile={bp === "mobile"} />
             </div>
           </div>
 
@@ -312,7 +312,7 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
   );
 }
 
-function MetricCard({ label, value, unit, data, color, domainMin, domainMax }: {
+function MetricCard({ label, value, unit, data, color, domainMin, domainMax, mobile }: {
   label: string;
   value: string;
   unit: string;
@@ -320,17 +320,28 @@ function MetricCard({ label, value, unit, data, color, domainMin, domainMax }: {
   color: string;
   domainMin?: number;
   domainMax?: number;
+  mobile?: boolean;
 }) {
   return (
     <div className="rounded-xl border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}>
       <div className="mb-1" style={{ color: "var(--text-primary)", fontSize: 14 }}>{label}</div>
-      <div className="flex items-end justify-between">
-        <div>
-          <span className="text-xl font-bold font-mono" style={{ color: "var(--text-primary)" }}>{value}</span>
-          {unit && <span className="text-xs ml-1" style={{ color: "var(--text-muted)" }}>{unit}</span>}
+      {mobile && data ? (
+        <div className="flex flex-col gap-2">
+          <div>
+            <span className="text-xl font-bold font-mono" style={{ color: "var(--text-primary)" }}>{value}</span>
+            {unit && <span className="text-xs ml-1" style={{ color: "var(--text-muted)" }}>{unit}</span>}
+          </div>
+          <Sparkline data={data} color={color} width={100} height={24} domainMin={domainMin} domainMax={domainMax} />
         </div>
-        {data && <Sparkline data={data} color={color} width={60} height={24} domainMin={domainMin} domainMax={domainMax} />}
-      </div>
+      ) : (
+        <div className="flex items-end justify-between">
+          <div>
+            <span className="text-xl font-bold font-mono" style={{ color: "var(--text-primary)" }}>{value}</span>
+            {unit && <span className="text-xs ml-1" style={{ color: "var(--text-muted)" }}>{unit}</span>}
+          </div>
+          {data && <Sparkline data={data} color={color} width={60} height={24} domainMin={domainMin} domainMax={domainMax} />}
+        </div>
+      )}
     </div>
   );
 }
@@ -367,27 +378,31 @@ function SimplifiesItem({ name, tooltip }: { name: string; tooltip: string }) {
   );
 }
 
-function ComparisonCard({ label, before, after, afterUnit, isCurrency }: {
+function ComparisonCard({ label, before, after, afterUnit, isCurrency, mobile }: {
   label: string;
   before: string;
   after: string;
   afterUnit: string;
   isCurrency?: boolean;
+  mobile?: boolean;
 }) {
   return (
     <div className="rounded-xl border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}>
       <div className="mb-2" style={{ color: "var(--text-primary)", fontSize: 14 }}>{label}</div>
-      <div className="flex items-baseline gap-2">
-        {before && (
-          <span className="text-xl font-bold line-through" style={{ color: "var(--text-muted)" }}>{before}</span>
-        )}
-        <span
-          className="text-xl font-bold"
-          style={{ color: isCurrency ? "var(--accent-green)" : "var(--accent-teal)" }}
-        >
-          {after}
-        </span>
-        {afterUnit && <span className="text-xs" style={{ color: "var(--text-muted)" }}>{afterUnit}</span>}
+      <div className={mobile && afterUnit ? "flex flex-col gap-1" : "flex items-baseline gap-2"}>
+        <div className="flex items-baseline gap-2">
+          {before && (
+            <span className="text-xl font-bold line-through" style={{ color: "var(--text-muted)" }}>{before}</span>
+          )}
+          <span
+            className="text-xl font-bold"
+            style={{ color: isCurrency ? "var(--accent-green)" : "var(--accent-teal)" }}
+          >
+            {after}
+          </span>
+          {!mobile && afterUnit && <span className="text-xs" style={{ color: "var(--text-muted)" }}>{afterUnit}</span>}
+        </div>
+        {mobile && afterUnit && <span className="text-xs" style={{ color: "var(--text-muted)" }}>{afterUnit}</span>}
       </div>
     </div>
   );
