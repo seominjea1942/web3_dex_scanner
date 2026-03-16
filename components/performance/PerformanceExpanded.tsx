@@ -138,7 +138,15 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
             {wc && (
               <>
                 <MetricCard label="Dataset" value={formatCompact(wc.dataset_count)} unit="swaps" color="var(--accent-teal)" />
-                <MetricCard label="Tables & Indexes" value={`${wc.table_count} / ${wc.index_count}`} unit="tables · indexes" color="var(--text-primary)" />
+                <div className="rounded-xl border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}>
+                  <div className="mb-1" style={{ color: "var(--text-primary)", fontSize: 14 }}>Tables & Indexes</div>
+                  <div className="flex items-baseline gap-1 flex-wrap">
+                    <span className="text-xl font-bold font-mono" style={{ color: "var(--text-primary)" }}>{wc.table_count}</span>
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>tables ·</span>
+                    <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>{wc.index_count}</span>
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>indexes</span>
+                  </div>
+                </div>
               </>
             )}
             <MetricCard label="Write Throughput" value={`${((m.write_throughput ?? 15000)).toLocaleString()}`} unit="rows/sec" data={spark.write_throughput} color="var(--accent-green)" mobile={bp === "mobile"} />
