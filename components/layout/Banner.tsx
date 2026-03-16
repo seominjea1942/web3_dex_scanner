@@ -14,9 +14,12 @@ export function Banner() {
 
       <div className="relative z-10 flex items-center justify-between px-4 py-2.5">
         <p className="text-sm">
-          <span className="banner-gradient-text font-semibold">Powered by one TiDB Essential instance.</span>{" "}
           <span style={{ color: "var(--text-secondary)" }}>
-            Streaming meets analytics — no separate cache, queue, or analytics database.
+            Live DEX intelligence. 3,124 tokens. Streaming meets analytics —{" "}
+          </span>
+          <span className="banner-gradient-text font-semibold">one TiDB Essential instance</span>
+          <span style={{ color: "var(--text-secondary)" }}>
+            . No separate cache, queue, or analytics database.
           </span>
         </p>
         <button

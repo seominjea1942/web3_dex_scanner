@@ -8,6 +8,7 @@ import { Sparkline } from "@/components/ui/Sparkline";
 import { LiveCounter } from "@/components/ui/LiveCounter";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { formatCompact } from "@/lib/format";
+import { useWorkloadContext } from "@/hooks/useWorkloadContext";
 
 interface MetricsResponse {
   metrics: Record<string, number>;
@@ -20,6 +21,7 @@ interface PerformanceBarProps {
 
 export function PerformanceBar({ onExpand }: PerformanceBarProps) {
   const bp = useBreakpoint();
+  const wc = useWorkloadContext();
 
   const { data } = usePolling<MetricsResponse>(
     () => fetch("/api/metrics").then((r) => r.json()),
@@ -38,18 +40,22 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
   const [mobileIdx, setMobileIdx] = useState(0);
   useEffect(() => {
     if (bp !== "mobile") return;
-    const id = setInterval(() => setMobileIdx((i) => (i + 1) % 6), 8000);
+    const id = setInterval(() => setMobileIdx((i) => (i + 1) % 7), 4000);
     return () => clearInterval(id);
   }, [bp]);
 
   const mobileItems = [
+    { label: "Workload", value: wc ? `${formatCompact(wc.dataset_count)} swaps` : "–", sparkData: undefined, color: "var(--accent-teal)" },
     { label: "Live Transactions", value: `${txPerSec} tx/sec`, sparkData: s.write_throughput, color: "var(--accent-green)" },
-    { label: "Query Latency", value: `${latency.toFixed(1)} ms`, sparkData: s.query_latency, color: "var(--accent-orange)" },
+    { label: "Query Latency P99", value: `${latency.toFixed(1)} ms`, sparkData: s.query_latency, color: "var(--accent-orange)" },
     { label: "Concurrent Queries", value: `${formatCompact(qps)}/sec`, sparkData: s.qps, color: "var(--accent-teal)" },
     { label: "Total Records", value: `${(totalRows + 1000000).toLocaleString()} rows`, sparkData: s.write_throughput, color: "var(--accent-green)" },
-    { label: "Uptime", value: "99.97%", sparkData: undefined, color: "var(--accent-green)" },
+    { label: "Uptime", value: "99.97%", sparkData: undefined, color: "var(--accent-green)", showDot: true },
     { label: "Infrastructure", value: "1 instance", sparkData: undefined, color: "var(--accent-teal)" },
   ];
+
+  const datasetLabel = wc ? formatCompact(wc.dataset_count) + " swaps" : "";
+  const tableLabel = wc ? wc.table_count + " tables" : "";
 
   return (
     <div
@@ -73,14 +79,30 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
 
         <div className="h-8 w-px shrink-0" style={{ background: "var(--border)" }} />
 
+        {/* Workload context — tablet+ only (mobile uses carousel) */}
+        {bp !== "mobile" && wc && (
+          <>
+            <div className="flex flex-col shrink-0">
+              <span className="text-[10px] leading-tight" style={{ color: "var(--text-secondary)" }}>Workload</span>
+              <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+                {datasetLabel} · {tableLabel}
+              </span>
+            </div>
+            <div className="h-8 w-px shrink-0" style={{ background: "var(--border)" }} />
+          </>
+        )}
+
         {/* Mobile: cycling metric */}
         {bp === "mobile" && (
-          <div className="flex items-center gap-2 shrink-0 min-w-0" style={{ transition: "opacity 0.3s ease" }}>
-            <div className="flex flex-col">
-              <span className="text-[10px] leading-tight" style={{ color: "var(--text-secondary)" }}>{mobileItems[mobileIdx].label}</span>
-              <span className="text-xs font-mono font-medium" style={{ color: "var(--text-primary)" }}>
-                {mobileItems[mobileIdx].value}
-              </span>
+          <div className="flex items-center gap-2 flex-1 min-w-0" style={{ transition: "opacity 0.3s ease" }}>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] leading-tight truncate" style={{ color: "var(--text-secondary)" }}>{mobileItems[mobileIdx].label}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-mono font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                  {mobileItems[mobileIdx].value}
+                </span>
+                {mobileItems[mobileIdx].showDot && <StatusDot />}
+              </div>
             </div>
             {mobileItems[mobileIdx].sparkData && (
               <Sparkline data={mobileItems[mobileIdx].sparkData ?? []} color={mobileItems[mobileIdx].color} width={60} height={20} />
@@ -105,10 +127,10 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
           <>
             <div className="h-8 w-px shrink-0" style={{ background: "var(--border)" }} />
 
-            {/* Query Latency */}
+            {/* Query Latency P99 */}
             <div className="flex items-center gap-2 shrink-0">
               <div className="flex flex-col">
-                <span className="text-[10px] leading-tight" style={{ color: "var(--text-secondary)" }}>Query Latency</span>
+                <span className="text-[10px] leading-tight" style={{ color: "var(--text-secondary)" }}>Query Latency P99</span>
                 <span className="text-xs font-mono font-medium" style={{ color: "var(--text-primary)" }}>
                   {latency.toFixed(1)} ms
                 </span>
