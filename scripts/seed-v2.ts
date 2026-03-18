@@ -237,21 +237,32 @@ async function insertTokens(db: mysql.Pool, tokens: JupiterToken[]) {
 
   console.log(`  Inserted ${inserted} tokens.`);
 
-  // Fix well-known quote token logos (DexScreener doesn't provide logos for quote tokens)
-  const knownLogos: Record<string, string> = {
-    SOL: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
-    USDC: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
-    USDT: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB/logo.png",
-    WETH: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs/logo.png",
-    WBTC: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh/logo.png",
-  };
-  for (const [symbol, url] of Object.entries(knownLogos)) {
+  // Insert well-known quote tokens with canonical addresses and logos
+  // DexScreener pools reference these by canonical mint address, but the seed
+  // only inserts base tokens — quote tokens (SOL, USDC, USDT) get missed.
+  const knownQuoteTokens = [
+    { address: "So11111111111111111111111111111111111111112", name: "Wrapped SOL", symbol: "SOL", decimals: 9, logo: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png" },
+    { address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", name: "USD Coin", symbol: "USDC", decimals: 6, logo: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png" },
+    { address: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", name: "USDT", symbol: "USDT", decimals: 6, logo: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB/logo.png" },
+    { address: "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs", name: "Ether (Wormhole)", symbol: "WETH", decimals: 8, logo: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs/logo.png" },
+    { address: "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh", name: "Wrapped BTC (Wormhole)", symbol: "WBTC", decimals: 8, logo: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh/logo.png" },
+  ];
+  for (const qt of knownQuoteTokens) {
     await db.execute(
-      `UPDATE tokens SET logo_url = ? WHERE symbol = ? AND (logo_url IS NULL OR logo_url = '')`,
-      [url, symbol]
+      `INSERT INTO tokens (address, name, symbol, decimals, logo_url) VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE logo_url = IF(logo_url IS NULL OR logo_url = '', VALUES(logo_url), logo_url)`,
+      [qt.address, qt.name, qt.symbol, qt.decimals, qt.logo]
     );
   }
-  console.log(`  Fixed logos for ${Object.keys(knownLogos).length} well-known quote tokens.\n`);
+
+  // Also fix any base tokens with matching symbols that lack logos
+  for (const qt of knownQuoteTokens) {
+    await db.execute(
+      `UPDATE tokens SET logo_url = ? WHERE symbol = ? AND (logo_url IS NULL OR logo_url = '')`,
+      [qt.logo, qt.symbol]
+    );
+  }
+  console.log(`  Inserted/fixed ${knownQuoteTokens.length} well-known quote tokens.\n`);
 
   return inserted;
 }
