@@ -6,6 +6,7 @@ interface WorkloadContext {
   dataset_count: number;
   table_count: number;
   index_count: number;
+  total_rows: number;
 }
 
 let cached: WorkloadContext | null = null;

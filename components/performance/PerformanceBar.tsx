@@ -33,7 +33,7 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
 
   const txPerSec = Math.round(m.write_throughput ? m.write_throughput / 500 : 30);
   const latency = m.query_latency ?? 3.0;
-  const totalRows = Math.round((m.write_throughput ?? 15000) * 500);
+  const totalRows = wc?.total_rows ?? 0;
   const qps = m.qps ?? 10000;
 
   // Mobile carousel: cycle through all 6 metrics every 8s
@@ -49,7 +49,7 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
     { label: "Live Transactions", value: `${txPerSec} tx/sec`, sparkData: s.write_throughput, color: "var(--accent-green)" },
     { label: "Query Latency P99", value: `${latency.toFixed(1)} ms`, sparkData: s.query_latency, color: "var(--accent-orange)" },
     { label: "Concurrent Queries", value: `${formatCompact(qps)}/sec`, sparkData: s.qps, color: "var(--accent-teal)" },
-    { label: "Total Records", value: `${(totalRows + 1000000).toLocaleString()} rows`, sparkData: s.write_throughput, color: "var(--accent-green)" },
+    { label: "Total Records", value: `${totalRows.toLocaleString()} rows`, sparkData: s.write_throughput, color: "var(--accent-green)" },
     { label: "Uptime", value: "99.97%", sparkData: undefined, color: "var(--accent-green)", showDot: true },
     { label: "Infrastructure", value: "1 instance", sparkData: undefined, color: "var(--accent-teal)" },
   ];
@@ -87,6 +87,17 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
               <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
                 {datasetLabel} · {tableLabel}
               </span>
+            </div>
+            <div className="h-8 w-px shrink-0" style={{ background: "var(--border)" }} />
+            {/* Total Records */}
+            <div className="flex flex-col shrink-0">
+              <span className="text-[10px] leading-tight" style={{ color: "var(--text-secondary)" }}>Total Records</span>
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-mono font-medium" style={{ color: "var(--text-primary)" }}>
+                  <LiveCounter value={totalRows} format={(n) => `${n.toLocaleString()} rows`} increment={3} />
+                </span>
+                <span className="material-symbols-outlined" style={{ fontSize: 14, color: "var(--accent-green)" }}>trending_up</span>
+              </div>
             </div>
             <div className="h-8 w-px shrink-0" style={{ background: "var(--border)" }} />
           </>
@@ -155,17 +166,6 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
 
         {bp === "desktop" && (
           <>
-            <div className="h-8 w-px shrink-0" style={{ background: "var(--border)" }} />
-
-            {/* Total Records */}
-            <div className="flex flex-col shrink-0">
-              <span className="text-[10px] leading-tight" style={{ color: "var(--text-secondary)" }}>Total Records</span>
-              <div className="flex items-center gap-1">
-                <LiveCounter value={totalRows + 1000000} format={(n) => `${n.toLocaleString()} rows`} increment={3} />
-                <span className="material-symbols-outlined" style={{ fontSize: 14, color: "var(--accent-green)" }}>trending_up</span>
-              </div>
-            </div>
-
             <div className="h-8 w-px shrink-0" style={{ background: "var(--border)" }} />
 
             {/* Uptime */}
