@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     const db = getPool();
 
     const [eventsResult] = await db.execute(
-      "DELETE FROM defi_events WHERE created_at < NOW() - INTERVAL 7 DAY"
+      "DELETE FROM defi_events WHERE timestamp < (UNIX_TIMESTAMP() - 7 * 24 * 3600) * 1000"
     );
     const eventsDeleted = (eventsResult as { affectedRows: number }).affectedRows;
 

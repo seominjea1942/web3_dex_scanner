@@ -3,13 +3,18 @@
 import { useState } from "react";
 import { useTheme } from "@/app/providers";
 
+interface NavbarProps {
+  activePage?: string;
+  onNavigate?: (page: string) => void;
+}
+
 const NAV_ITEMS = [
-  { label: "DEX Screener", href: "/", active: true },
-  { label: "Portfolio", href: "#", comingSoon: true },
-  { label: "SQL Console", href: "#", comingSoon: true },
+  { label: "DEX Screener", page: "screener" },
+  { label: "Portfolio", page: "portfolio", comingSoon: true },
+  { label: "SQL Console", page: "sql-console" },
 ];
 
-export function Navbar() {
+export function Navbar({ activePage = "screener", onNavigate }: NavbarProps) {
   const { theme, toggleTheme } = useTheme();
   const [showChainMenu, setShowChainMenu] = useState(false);
   const [comingSoonMsg, setComingSoonMsg] = useState<string | null>(null);
@@ -40,29 +45,34 @@ export function Navbar() {
         </svg>
 
         <div className="hidden md:flex items-stretch gap-6 self-stretch">
-          {NAV_ITEMS.map((item) => (
-            <button
-              key={item.label}
-              onClick={() => {
-                if (item.comingSoon) {
-                  setComingSoonMsg(item.label);
-                  setTimeout(() => setComingSoonMsg(null), 2000);
-                }
-              }}
-              className="relative px-1 text-sm font-medium transition-colors flex items-center"
-              style={{
-                color: item.active ? "var(--text-primary)" : "var(--text-muted)",
-              }}
-            >
-              {item.label}
-              {item.active && (
-                <span
-                  className="absolute left-0 right-0 h-0.5"
-                  style={{ background: "var(--accent-blue, #6366F1)", bottom: 0 }}
-                />
-              )}
-            </button>
-          ))}
+          {NAV_ITEMS.map((item) => {
+            const isActive = activePage === item.page;
+            return (
+              <button
+                key={item.label}
+                onClick={() => {
+                  if (item.comingSoon) {
+                    setComingSoonMsg(item.label);
+                    setTimeout(() => setComingSoonMsg(null), 2000);
+                  } else {
+                    onNavigate?.(item.page);
+                  }
+                }}
+                className="relative px-1 text-sm font-medium transition-colors flex items-center"
+                style={{
+                  color: isActive ? "var(--text-primary)" : "var(--text-muted)",
+                }}
+              >
+                {item.label}
+                {isActive && (
+                  <span
+                    className="absolute left-0 right-0 h-0.5"
+                    style={{ background: "var(--accent-blue, #6366F1)", bottom: 0 }}
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 

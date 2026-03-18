@@ -15,7 +15,7 @@ export async function GET() {
     const dbName = process.env.TIDB_DATABASE ?? "chainscope";
 
     const [[txCount], [tableCount], [indexCount]] = await Promise.all([
-      db.query<CountRow[]>("SELECT COUNT(*) as c FROM transactions"),
+      db.query<CountRow[]>("SELECT COUNT(*) as c FROM swap_transactions"),
       db.query<CountRow[]>(
         "SELECT COUNT(*) as c FROM information_schema.tables WHERE table_schema = ?",
         [dbName]

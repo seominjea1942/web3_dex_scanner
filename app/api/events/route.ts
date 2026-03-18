@@ -6,14 +6,21 @@ import type { RowDataPacket } from "mysql2";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Map frontend event type filters to v2 schema event_type values
+const EVENT_TYPE_MAP: Record<string, string[]> = {
+  liquidity: ["liquidity_add", "liquidity_remove"],
+  swap: ["large_trade"],
+};
+
 export async function GET(req: NextRequest) {
   try {
     const db = getPool();
     const params = req.nextUrl.searchParams;
 
     // Lazy replay: if last event is older than 3s, generate new ones
+    // v2: timestamp is BIGINT (ms), compute age in seconds
     const [ageRows] = await db.query<RowDataPacket[]>(
-      `SELECT TIMESTAMPDIFF(SECOND, MAX(created_at), NOW()) as age FROM defi_events`
+      `SELECT (UNIX_TIMESTAMP() * 1000 - MAX(timestamp)) / 1000 as age FROM defi_events`
     );
     const age = (ageRows[0] as Record<string, unknown>)?.age as number | null;
     if (age === null || age > 8) {
@@ -33,23 +40,38 @@ export async function GET(req: NextRequest) {
 
     if (type) {
       const types = type.split(",").map((t) => t.trim()).filter(Boolean);
-      if (types.length > 0) {
-        where += ` AND event_type IN (${types.map(() => "?").join(",")})`;
-        queryParams.push(...types);
+      // Expand frontend types to v2 types
+      const v2Types: string[] = [];
+      for (const t of types) {
+        if (EVENT_TYPE_MAP[t]) {
+          v2Types.push(...EVENT_TYPE_MAP[t]);
+        } else {
+          v2Types.push(t);
+        }
       }
-    } else {
-      // Default "All" tab: everything except swap
-      where += " AND event_type != 'swap'";
+      if (v2Types.length > 0) {
+        where += ` AND event_type IN (${v2Types.map(() => "?").join(",")})`;
+        queryParams.push(...v2Types);
+      }
     }
+    // v2 doesn't have 'swap' event_type, so no need for the old "event_type != 'swap'" filter
 
     if (minAmount > 0) {
-      where += " AND amount_usd >= ?";
+      where += " AND usd_value >= ?";
       queryParams.push(minAmount);
     }
 
+    // v2: alias columns to old names for frontend compatibility
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT *, TIMESTAMPDIFF(SECOND, created_at, NOW()) as seconds_ago
-       FROM defi_events ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      `SELECT *,
+        FROM_UNIXTIME(timestamp / 1000) as created_at,
+        trader_wallet as wallet_address,
+        usd_value as amount_usd,
+        dex as dex_name,
+        (UNIX_TIMESTAMP() - timestamp / 1000) as seconds_ago,
+        pool_address,
+        severity
+       FROM defi_events ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
       [...queryParams, limit, offset]
     );
 

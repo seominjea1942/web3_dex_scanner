@@ -16,9 +16,9 @@ export async function GET() {
     const [[tokenCount], [poolCount], [txCount], [eventCount]] = await Promise.all([
       db.query<CountRow[]>("SELECT COUNT(*) as c FROM tokens"),
       db.query<CountRow[]>("SELECT COUNT(*) as c FROM pools"),
-      db.query<CountRow[]>("SELECT COUNT(*) as c FROM transactions"),
+      db.query<CountRow[]>("SELECT COUNT(*) as c FROM swap_transactions"),
       db.query<CountRow[]>(
-        "SELECT COUNT(*) as c FROM defi_events WHERE created_at > NOW() - INTERVAL 1 MINUTE"
+        "SELECT COUNT(*) as c FROM defi_events WHERE timestamp > (UNIX_TIMESTAMP() - 60) * 1000"
       ),
     ]);
 

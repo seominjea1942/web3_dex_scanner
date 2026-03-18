@@ -30,7 +30,8 @@ export function formatPrice(value: number): string {
   return `$${value.toFixed(8)}`;
 }
 
-export function truncateAddress(address: string, startLen = 4, endLen = 4): string {
+export function truncateAddress(address: string | null | undefined, startLen = 4, endLen = 4): string {
+  if (!address) return "";
   if (address.length <= startLen + endLen + 3) return address;
   return `${address.slice(0, startLen)}...${address.slice(-endLen)}`;
 }

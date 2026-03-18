@@ -13,10 +13,32 @@ interface TemplateRow extends RowDataPacket {
   dex_name: string;
 }
 
+// Map old event_types (from event_templates) to v2 defi_events event_types
+const EVENT_TYPE_V2_MAP: Record<string, string> = {
+  swap: "large_trade",
+  liquidity: "liquidity_add",
+};
+
+// Derive severity from event_type
+function getSeverity(eventType: string): string {
+  switch (eventType) {
+    case "whale":
+    case "new_pool":
+      return "high";
+    case "liquidity_add":
+    case "liquidity_remove":
+    case "smart_money":
+      return "medium";
+    case "large_trade":
+    default:
+      return "low";
+  }
+}
+
 export async function replayOneEvent(): Promise<void> {
   const pool = getPool();
 
-  // Pick a random event type by weight
+  // Pick a random event type by weight (uses old event_type names from templates)
   const eventType = weightedRandomType();
 
   // Get a random template of that type
@@ -44,7 +66,7 @@ async function insertMutatedEvent(template: TemplateRow): Promise<void> {
   // Mutate wallet: keep first 4 + last 4 chars, randomize middle
   const wallet = mutateWallet(template.wallet_address);
 
-  // Mutate amount: ±20%
+  // Mutate amount: +-20%
   const multiplier = 0.8 + Math.random() * 0.4;
   const amount = Math.round(template.amount_usd * multiplier * 100) / 100;
 
@@ -53,17 +75,24 @@ async function insertMutatedEvent(template: TemplateRow): Promise<void> {
     .replace("{amount}", formatAmount(amount, template.token_symbol))
     .replace("{usd}", formatUsd(amount));
 
+  // Map event_type to v2 values
+  const v2EventType = EVENT_TYPE_V2_MAP[template.event_type] ?? template.event_type;
+  const severity = getSeverity(v2EventType);
+  const timestamp = Date.now();
+
+  // v2 INSERT: defi_events uses timestamp (BIGINT ms), pool_address, dex, severity, trader_wallet, usd_value
   await pool.execute(
-    `INSERT INTO defi_events (event_type, token_symbol, token_logo_url, description, wallet_address, amount_usd, dex_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO defi_events (event_type, timestamp, pool_address, dex, severity, trader_wallet, usd_value, description)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      template.event_type,
-      template.token_symbol,
-      template.token_logo_url,
-      description,
+      v2EventType,
+      timestamp,
+      "", // pool_address: event templates don't have pool_address
+      template.dex_name,
+      severity,
       wallet,
       amount,
-      template.dex_name,
+      description,
     ]
   );
 }

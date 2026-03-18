@@ -19,16 +19,16 @@ export async function GET(req: NextRequest) {
 
     const offset = (page - 1) * limit;
 
-    // Valid sort columns
+    // Valid sort columns (v2 schema)
     const sortMap: Record<string, string> = {
       volume_24h: "p.volume_24h",
       liquidity_usd: "p.liquidity_usd",
       price_change_24h: "p.price_change_24h",
       market_cap: "p.market_cap",
-      txns_24h: "p.txns_24h",
+      txns_24h: "(COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0))",
       trending: "(p.volume_24h / GREATEST(p.liquidity_usd, 1))",
       newest: "p.pool_created_at",
-      velocity: "(p.volume_1h / GREATEST(p.volume_24h / 24, 1))",
+      velocity: "(COALESCE(p.volume_1h,0) / GREATEST(p.volume_24h / 24, 1))",
     };
 
     // Determine effective sort: filter may set a default sort
@@ -51,14 +51,14 @@ export async function GET(req: NextRequest) {
     const queryParams: (string | number)[] = [];
 
     if (search) {
-      where += " AND (p.pair_label LIKE ? OR t_base.symbol LIKE ? OR t_base.name LIKE ? OR p.id LIKE ?)";
+      where += " AND (CONCAT(p.token_base_symbol, '/', p.token_quote_symbol) LIKE ? OR p.token_base_symbol LIKE ? OR t_base.name LIKE ? OR p.address LIKE ?)";
       const s = `%${search}%`;
       queryParams.push(s, s, s, s);
     }
 
     // Filter conditions
     if (filter === "hot") {
-      where += " AND (p.volume_1h / GREATEST(p.volume_24h / 24, 1)) > 1.5";
+      where += " AND (COALESCE(p.volume_1h,0) / GREATEST(p.volume_24h / 24, 1)) > 1.5";
     } else if (filter === "gainers") {
       where += " AND p.price_change_24h > 0";
     } else if (filter === "losers") {
@@ -68,23 +68,43 @@ export async function GET(req: NextRequest) {
     // Count query
     const [countRows] = await db.query<Array<{ total: number } & RowDataPacket>>(
       `SELECT COUNT(*) as total FROM pools p
-       LEFT JOIN tokens t_base ON p.token_base_id = t_base.id
+       LEFT JOIN tokens t_base ON p.token_base_address = t_base.address
        ${where}`,
       queryParams
     );
     const total = countRows[0]?.total ?? 0;
 
-    // Data query
+    // Data query - alias v2 columns to old names so frontend doesn't break
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT p.*,
+      `SELECT
+        p.address as id,
+        p.token_base_address as token_base_id,
+        p.token_quote_address as token_quote_id,
+        CONCAT(p.token_base_symbol, '/', p.token_quote_symbol) as pair_label,
+        p.dex as dex_name,
+        'AMM' as pool_type,
+        'solana' as chain,
+        (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as makers,
+        (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as txns_24h,
+        p.last_updated as updated_at,
+        p.price_usd,
+        p.price_change_5m,
+        p.price_change_1h,
+        p.price_change_6h,
+        p.price_change_24h,
+        p.volume_24h,
+        COALESCE(p.volume_1h, 0) as volume_1h,
+        p.liquidity_usd,
+        p.market_cap,
+        p.pool_created_at,
         t_base.logo_url as base_logo_url,
         t_base.name as base_name,
         t_base.symbol as base_symbol,
         t_quote.logo_url as quote_logo_url,
         t_quote.symbol as quote_symbol
        FROM pools p
-       LEFT JOIN tokens t_base ON p.token_base_id = t_base.id
-       LEFT JOIN tokens t_quote ON p.token_quote_id = t_quote.id
+       LEFT JOIN tokens t_base ON p.token_base_address = t_base.address
+       LEFT JOIN tokens t_quote ON p.token_quote_address = t_quote.address
        ${where}
        ORDER BY ${sortCol} ${effectiveOrder}
        LIMIT ? OFFSET ?`,
@@ -94,13 +114,13 @@ export async function GET(req: NextRequest) {
     // Apply live jitter to simulate real-time ticks
     const pools = rows.map((row) => {
       const price = Number(row.price_usd);
-      const priceJitter = price * (Math.random() - 0.5) * 0.002; // ±0.1%
+      const priceJitter = price * (Math.random() - 0.5) * 0.002; // +-0.1%
       const vol = Number(row.volume_24h);
-      const volJitter = vol * (Math.random() - 0.5) * 0.01; // ±0.5%
+      const volJitter = vol * (Math.random() - 0.5) * 0.01; // +-0.5%
       const liq = Number(row.liquidity_usd);
-      const liqJitter = liq * (Math.random() - 0.5) * 0.004; // ±0.2%
+      const liqJitter = liq * (Math.random() - 0.5) * 0.004; // +-0.2%
       const mcap = Number(row.market_cap);
-      const mcapJitter = mcap * (Math.random() - 0.5) * 0.002; // ±0.1%
+      const mcapJitter = mcap * (Math.random() - 0.5) * 0.002; // +-0.1%
       const makers = Number(row.makers);
       const makersJitter = Math.round((Math.random() - 0.5) * Math.max(4, makers * 0.002));
       return {

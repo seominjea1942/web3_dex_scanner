@@ -2,12 +2,12 @@ import mysql from "mysql2/promise";
 
 let pool: mysql.Pool | null = null;
 
-const getEnv = (key: string, fallback?: string) => {
+const getEnv = (key: string, fallback?: string, allowEmpty = false) => {
   const value = (process.env[key] ?? fallback)?.trim();
-  if (value === undefined || value === "") {
+  if (value === undefined || (!allowEmpty && value === "")) {
     throw new Error(`Missing environment variable: ${key}`);
   }
-  return value;
+  return value ?? "";
 };
 
 export const getPool = () => {
@@ -22,7 +22,7 @@ export const getPool = () => {
     host: getEnv("TIDB_HOST"),
     port: Number(getEnv("TIDB_PORT", "4000")),
     user: getEnv("TIDB_USER"),
-    password: getEnv("TIDB_PASSWORD", ""),
+    password: getEnv("TIDB_PASSWORD", "", true),
     database: getEnv("TIDB_DATABASE"),
     waitForConnections: true,
     connectionLimit: 10,

@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
 
     // Get top 20 pools by volume
     const [pools] = await db.query<Array<{ id: string; token_base_id: string } & RowDataPacket>>(
-      `SELECT id, token_base_id FROM pools ORDER BY volume_24h DESC LIMIT 20`
+      `SELECT address as id, token_base_address as token_base_id FROM pools ORDER BY volume_24h DESC LIMIT 20`
     );
 
     // Fetch from DexScreener
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
               volume_1h = ?,
               volume_24h = ?,
               liquidity_usd = ?
-             WHERE id = ?`,
+             WHERE address = ?`,
             [
               parseFloat(pair.priceUsd || "0"),
               pair.priceChange?.m5 ?? 0,
