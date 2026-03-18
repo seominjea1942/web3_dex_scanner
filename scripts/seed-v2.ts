@@ -235,7 +235,24 @@ async function insertTokens(db: mysql.Pool, tokens: JupiterToken[]) {
     inserted += batch.length;
   }
 
-  console.log(`  Inserted ${inserted} tokens.\n`);
+  console.log(`  Inserted ${inserted} tokens.`);
+
+  // Fix well-known quote token logos (DexScreener doesn't provide logos for quote tokens)
+  const knownLogos: Record<string, string> = {
+    SOL: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
+    USDC: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
+    USDT: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB/logo.png",
+    WETH: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs/logo.png",
+    WBTC: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh/logo.png",
+  };
+  for (const [symbol, url] of Object.entries(knownLogos)) {
+    await db.execute(
+      `UPDATE tokens SET logo_url = ? WHERE symbol = ? AND (logo_url IS NULL OR logo_url = '')`,
+      [url, symbol]
+    );
+  }
+  console.log(`  Fixed logos for ${Object.keys(knownLogos).length} well-known quote tokens.\n`);
+
   return inserted;
 }
 
