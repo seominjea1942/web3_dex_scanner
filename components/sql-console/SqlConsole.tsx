@@ -1,8 +1,68 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { formatCompact } from "@/lib/format";
+
+// ── SQL Syntax Highlighting ─────────────────────────────────────
+const SQL_KEYWORDS = new Set([
+  "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "AS", "ON",
+  "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "CROSS", "FULL",
+  "GROUP", "BY", "ORDER", "HAVING", "LIMIT", "OFFSET", "UNION",
+  "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE",
+  "CREATE", "TABLE", "DROP", "ALTER", "INDEX",
+  "DISTINCT", "ALL", "EXISTS", "BETWEEN", "LIKE", "IS", "NULL",
+  "CASE", "WHEN", "THEN", "ELSE", "END", "IF",
+  "ASC", "DESC", "WITH", "INTERVAL", "TRUE", "FALSE",
+]);
+
+const SQL_FUNCTIONS = new Set([
+  "COUNT", "SUM", "AVG", "MIN", "MAX", "ROUND", "FLOOR", "CEIL",
+  "COALESCE", "GREATEST", "LEAST", "CONCAT", "SUBSTRING",
+  "NOW", "UNIX_TIMESTAMP", "FROM_UNIXTIME", "DATE_FORMAT",
+  "TIMESTAMPDIFF", "MATCH", "AGAINST",
+]);
+
+function highlightSql(sql: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  // Tokenize: strings, numbers, words, symbols, whitespace
+  const regex = /('(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?\b)|(--[^\n]*)|(\b[A-Za-z_]\w*\b)|(\s+)|(.)/g;
+  let match;
+  let key = 0;
+
+  while ((match = regex.exec(sql)) !== null) {
+    const [, str, num, comment, word, ws, sym] = match;
+    if (str) {
+      // String literal
+      parts.push(<span key={key++} style={{ color: "#E9967A" }}>{str}</span>);
+    } else if (num) {
+      // Number
+      parts.push(<span key={key++} style={{ color: "#B5CEA8" }}>{num}</span>);
+    } else if (comment) {
+      // Comment
+      parts.push(<span key={key++} style={{ color: "#6A9955" }}>{comment}</span>);
+    } else if (word) {
+      const upper = word.toUpperCase();
+      if (SQL_KEYWORDS.has(upper)) {
+        parts.push(<span key={key++} style={{ color: "#569CD6", fontWeight: 600 }}>{word.toUpperCase()}</span>);
+      } else if (SQL_FUNCTIONS.has(upper)) {
+        parts.push(<span key={key++} style={{ color: "#DCDCAA" }}>{word}</span>);
+      } else if (word === word.toUpperCase() && word.length > 1) {
+        // ALL_CAPS identifiers like table aliases
+        parts.push(<span key={key++} style={{ color: "var(--text-primary)" }}>{word}</span>);
+      } else {
+        // Regular identifiers
+        parts.push(<span key={key++} style={{ color: "#9CDCFE" }}>{word}</span>);
+      }
+    } else if (ws) {
+      parts.push(<span key={key++}>{ws}</span>);
+    } else if (sym) {
+      parts.push(<span key={key++} style={{ color: "var(--text-muted)" }}>{sym}</span>);
+    }
+  }
+
+  return parts;
+}
 
 // ── Preset Queries ──────────────────────────────────────────────
 const PRESET_QUERIES = [
@@ -161,8 +221,9 @@ export function SqlConsole() {
   const handlePresetClick = useCallback((preset: typeof PRESET_QUERIES[0]) => {
     setSql(preset.sql);
     setActivePreset(preset.id);
-    executeQuery(preset.sql);
-  }, [executeQuery]);
+    setResult(null);
+    setError(null);
+  }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -171,6 +232,7 @@ export function SqlConsole() {
     }
   }, [sql, executeQuery]);
 
+  const highlighted = useMemo(() => highlightSql(sql), [sql]);
   const gridCols = bp === "mobile" ? "grid-cols-1" : bp === "tablet" ? "grid-cols-3" : "grid-cols-4";
 
   return (
@@ -227,7 +289,28 @@ export function SqlConsole() {
             {bp === "mobile" ? "Run ▶" : "⌘+Enter to run"}
           </div>
         </div>
-        <div className="relative">
+        <div
+          className="relative rounded-lg border overflow-hidden"
+          style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}
+        >
+          {/* Syntax-highlighted layer (behind textarea) */}
+          <pre
+            className="font-mono text-sm p-4 pointer-events-none whitespace-pre-wrap break-words"
+            style={{
+              minHeight: bp === "mobile" ? 100 : 140,
+              lineHeight: 1.6,
+              margin: 0,
+              color: "transparent",
+            }}
+            aria-hidden
+          >
+            {sql ? highlighted : (
+              <span style={{ color: "var(--text-muted)" }}>Enter SQL query... (SELECT only)</span>
+            )}
+            {/* Extra newline so pre matches textarea scroll height */}
+            {"\n"}
+          </pre>
+          {/* Transparent textarea on top for editing */}
           <textarea
             ref={textareaRef}
             value={sql}
@@ -236,13 +319,11 @@ export function SqlConsole() {
               setActivePreset(null);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Enter SQL query... (SELECT only)"
-            className="w-full font-mono text-sm rounded-lg border p-4 resize-y focus:outline-none"
+            className="absolute inset-0 w-full h-full font-mono text-sm p-4 resize-none focus:outline-none"
             style={{
-              background: "var(--bg-card)",
-              borderColor: "var(--border)",
-              color: "var(--text-primary)",
-              minHeight: bp === "mobile" ? 100 : 140,
+              background: "transparent",
+              color: "transparent",
+              caretColor: "var(--text-primary)",
               lineHeight: 1.6,
             }}
             spellCheck={false}
