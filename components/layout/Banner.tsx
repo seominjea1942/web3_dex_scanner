@@ -1,10 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 export function Banner() {
   const [dismissed, setDismissed] = useState(false);
+  const [tokenCount, setTokenCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch("/api/stats")
+      .then((r) => r.json())
+      .then((d) => setTokenCount(d.total_tokens))
+      .catch(() => {});
+  }, []);
 
   if (dismissed) return null;
+
+  const formattedCount = tokenCount !== null
+    ? tokenCount.toLocaleString()
+    : "—";
 
   return (
     <div className="banner-upsell relative overflow-hidden border-b" style={{ borderColor: "var(--border)" }}>
@@ -15,7 +27,7 @@ export function Banner() {
       <div className="relative z-10 flex items-center justify-between px-4 py-2.5">
         <p className="text-sm">
           <span style={{ color: "var(--text-secondary)" }}>
-            Live DEX intelligence. 3,124 tokens. Streaming meets analytics —{" "}
+            Live DEX intelligence. {formattedCount} tokens. Streaming meets analytics —{" "}
           </span>
           <span className="banner-gradient-text font-semibold">one TiDB Essential instance</span>
           <span style={{ color: "var(--text-secondary)" }}>
