@@ -22,15 +22,15 @@ export default function Home() {
   return (
     <main className="min-h-screen flex flex-col" style={{ background: "var(--bg-primary)" }}>
       <Navbar activePage={activePage} onNavigate={(page) => setActivePage(page as "screener" | "sql-console")} />
-      <Banner />
-
       {activePage === "sql-console" ? (
         /* SQL Console — full width, no event sidebar */
         <div className="flex-1 pb-12">
+          <EventTicker onClick={() => {}} />
           <SqlConsole />
         </div>
       ) : (
         <>
+          <Banner />
           {/* Mobile event ticker */}
           {bp !== "desktop" && !eventsOpen && <EventTicker onClick={() => setEventsOpen(true)} />}
 

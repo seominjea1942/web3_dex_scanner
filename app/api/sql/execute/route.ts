@@ -13,12 +13,25 @@ const DANGEROUS_KEYWORDS = [
   "INTO OUTFILE", "INTO DUMPFILE", "REPLACE",
 ];
 
+/** Strip SQL comments so validation sees the actual statement keyword */
+function stripComments(sql: string): string {
+  // Remove block comments  /* ... */
+  let s = sql.replace(/\/\*[\s\S]*?\*\//g, "");
+  // Remove single-line comments  -- ...
+  s = s.replace(/--[^\n]*/g, "");
+  return s.trim();
+}
+
 function validateSql(sql: string): string | null {
   const trimmed = sql.trim().replace(/;+$/, "").trim();
   if (!trimmed) return "Empty query";
 
+  // Strip comments before checking the first keyword
+  const stripped = stripComments(trimmed);
+  if (!stripped) return "Empty query (comments only)";
+
   // Check first keyword
-  const firstWord = trimmed.split(/\s+/)[0].toUpperCase();
+  const firstWord = stripped.split(/\s+/)[0].toUpperCase();
   if (!ALLOWED_PREFIXES.includes(firstWord)) {
     return `Only SELECT, EXPLAIN, SHOW, and DESCRIBE queries are allowed. Got: ${firstWord}`;
   }
@@ -58,8 +71,8 @@ export async function POST(req: NextRequest) {
 
     // Enforce LIMIT if user didn't provide one (prevent 7M row responses)
     let execSql = sql;
-    const upperSql = sql.toUpperCase();
-    if (upperSql.startsWith("SELECT") && !upperSql.includes("LIMIT")) {
+    const strippedUpper = stripComments(sql).toUpperCase();
+    if (strippedUpper.startsWith("SELECT") && !strippedUpper.includes("LIMIT")) {
       execSql = `${sql} LIMIT 1000`;
     }
 

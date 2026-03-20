@@ -173,7 +173,7 @@ export function ResultsChart({ columns, rows }: ResultsChartProps) {
       <div style={{ width: "100%", height: 350 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 8 }}>
-            <CartesianGrid stroke="#222222" strokeDasharray="3 3" />
+            <CartesianGrid stroke="#222222" strokeDasharray="3 3" strokeOpacity={0.4} />
             <XAxis
               dataKey={xKey}
               tick={axisTickStyle}
@@ -196,7 +196,7 @@ export function ResultsChart({ columns, rows }: ResultsChartProps) {
               contentStyle={tooltipStyle.contentStyle}
               itemStyle={tooltipStyle.itemStyle}
               labelStyle={tooltipStyle.labelStyle}
-              formatter={(value: number) => [formatCompact(value), undefined]}
+              formatter={(value: number, name: string) => [formatCompact(value), name]}
             />
             {yKeys.map((key, idx) => (
               <Line
@@ -221,7 +221,7 @@ export function ResultsChart({ columns, rows }: ResultsChartProps) {
     <div style={{ width: "100%", height: 350 }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 8 }}>
-          <CartesianGrid stroke="#222222" strokeDasharray="3 3" />
+          <CartesianGrid stroke="#222222" strokeDasharray="3 3" strokeOpacity={0.4} />
           <XAxis
             dataKey={xKey}
             tick={axisTickStyle}
@@ -242,7 +242,7 @@ export function ResultsChart({ columns, rows }: ResultsChartProps) {
             contentStyle={tooltipStyle.contentStyle}
             itemStyle={tooltipStyle.itemStyle}
             labelStyle={tooltipStyle.labelStyle}
-            formatter={(value: number) => [formatCompact(value), undefined]}
+            formatter={(value: number, name: string) => [formatCompact(value), name]}
             cursor={{ fill: "rgba(255,255,255,0.04)" }}
           />
           {yKeys.map((key, idx) => (

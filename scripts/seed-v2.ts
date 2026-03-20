@@ -198,10 +198,10 @@ async function fetchTokensViaDexScreener(): Promise<{ tokens: JupiterToken[]; pa
   }
 
   // Deduplicate pairs by pool address
-  const uniquePairs = [...new Map(allPairs.map((p) => [p.pairAddress, p])).values()];
+  const uniquePairs = Array.from(new Map(allPairs.map((p) => [p.pairAddress, p])).values());
   uniquePairs.sort((a, b) => (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0));
 
-  const tokens = [...tokenMap.values()];
+  const tokens = Array.from(tokenMap.values());
   console.log(`  Total unique tokens: ${tokens.length}`);
   console.log(`  Total unique pairs: ${uniquePairs.length}\n`);
 

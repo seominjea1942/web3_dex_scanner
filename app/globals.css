@@ -27,6 +27,13 @@
   --event-new-pool: #30D158;
   --event-liquidity: #DB34F2;
   --event-smart-money: #818CF8;
+  /* SQL syntax highlighting — purple theme (dark) */
+  --sql-keyword: #C792EA;
+  --sql-function: #82AAFF;
+  --sql-string: #C3E88D;
+  --sql-number: #F78C6C;
+  --sql-comment: #636d83;
+  --sql-identifier: #A9C0FF;
 }
 
 /* Light theme */
@@ -56,6 +63,13 @@
   --event-new-pool: #34C759;
   --event-liquidity: #CB30E0;
   --event-smart-money: #6366F1;
+  /* SQL syntax highlighting — purple theme (light) */
+  --sql-keyword: #7C3AED;
+  --sql-function: #2563EB;
+  --sql-string: #16A34A;
+  --sql-number: #C2410C;
+  --sql-comment: #9CA3AF;
+  --sql-identifier: #4338CA;
 }
 
 body {
@@ -125,6 +139,22 @@ body {
 }
 .animate-ticker {
   animation: ticker-scroll 30s linear infinite;
+}
+
+/* Ticker rainbow glow for new events */
+@keyframes ticker-rainbow-pulse {
+  0%   { color: #ff6b6b; }
+  14%  { color: #ffa500; }
+  28%  { color: #ffd700; }
+  42%  { color: #4ecdc4; }
+  57%  { color: #45b7d1; }
+  71%  { color: #6c5ce7; }
+  85%  { color: #a855f7; }
+  100% { color: #ff6b6b; }
+}
+.ticker-rainbow-glow span,
+.ticker-rainbow-glow .font-mono {
+  animation: ticker-rainbow-pulse 2s linear infinite !important;
 }
 
 /* Fade in animation */

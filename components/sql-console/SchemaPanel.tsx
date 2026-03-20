@@ -93,11 +93,10 @@ export function SchemaPanel({ onInsertText }: SchemaPanelProps) {
   return (
     <div
       style={{
-        width: 240,
-        minWidth: 240,
-        height: "100%",
+        width: "100%",
+        flex: 1,
+        minHeight: 0,
         background: "var(--bg-secondary)",
-        borderRight: "1px solid var(--border)",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
@@ -355,14 +354,18 @@ export function SchemaPanel({ onInsertText }: SchemaPanelProps) {
         )}
       </div>
 
-      {/* Footer */}
+      {/* Footer — height matches SQL editor run bar */}
       <div
+        className="font-mono"
         style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
           padding: "8px 12px",
           borderTop: "1px solid var(--border)",
-          fontSize: 11,
+          fontSize: 12,
           color: "var(--text-muted)",
-          textAlign: "center",
+          minHeight: 45,
         }}
       >
         tables: {schema?.table_count ?? 0} &middot; views: {schema?.view_count ?? 0}

@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useMemo } from "react";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { formatCompact } from "@/lib/format";
 import { SchemaPanel } from "./SchemaPanel";
-import { QueryChips } from "./QueryChips";
+import { QueryChips, getPresetInfo } from "./QueryChips";
 import { ResultsChart } from "./ResultsChart";
 
 // ── SQL Syntax Highlighting ─────────────────────────────────────
@@ -35,21 +35,21 @@ function highlightSql(sql: string): React.ReactNode[] {
   while ((match = regex.exec(sql)) !== null) {
     const [, str, num, comment, word, ws, sym] = match;
     if (str) {
-      parts.push(<span key={key++} style={{ color: "#E9967A" }}>{str}</span>);
+      parts.push(<span key={key++} style={{ color: "var(--sql-string)" }}>{str}</span>);
     } else if (num) {
-      parts.push(<span key={key++} style={{ color: "#B5CEA8" }}>{num}</span>);
+      parts.push(<span key={key++} style={{ color: "var(--sql-number)" }}>{num}</span>);
     } else if (comment) {
-      parts.push(<span key={key++} style={{ color: "#6A9955" }}>{comment}</span>);
+      parts.push(<span key={key++} style={{ color: "var(--sql-comment)" }}>{comment}</span>);
     } else if (word) {
       const upper = word.toUpperCase();
       if (SQL_KEYWORDS.has(upper)) {
-        parts.push(<span key={key++} style={{ color: "#569CD6", fontWeight: 600 }}>{word.toUpperCase()}</span>);
+        parts.push(<span key={key++} style={{ color: "var(--sql-keyword)", fontWeight: 600 }}>{word.toUpperCase()}</span>);
       } else if (SQL_FUNCTIONS.has(upper)) {
-        parts.push(<span key={key++} style={{ color: "#DCDCAA" }}>{word}</span>);
+        parts.push(<span key={key++} style={{ color: "var(--sql-function)" }}>{word}</span>);
       } else if (word === word.toUpperCase() && word.length > 1) {
         parts.push(<span key={key++} style={{ color: "var(--text-primary)" }}>{word}</span>);
       } else {
-        parts.push(<span key={key++} style={{ color: "#9CDCFE" }}>{word}</span>);
+        parts.push(<span key={key++} style={{ color: "var(--sql-identifier)" }}>{word}</span>);
       }
     } else if (ws) {
       parts.push(<span key={key++}>{ws}</span>);
@@ -60,6 +60,10 @@ function highlightSql(sql: string): React.ReactNode[] {
 
   return parts;
 }
+
+// ── Placeholder table columns for empty state ───────────────────
+const PLACEHOLDER_COLS = ["token_address", "pair_name", "total_volume", "trade_count", "avg_price"];
+const PLACEHOLDER_WIDTHS = [140, 100, 110, 90, 100];
 
 // ── Types ───────────────────────────────────────────────────────
 interface QueryResult {
@@ -78,7 +82,6 @@ export function SqlConsole() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [activePreset, setActivePreset] = useState<string | null>(null);
-  const [resultView, setResultView] = useState<"table" | "chart">("table");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -87,7 +90,6 @@ export function SqlConsole() {
     setLoading(true);
     setError(null);
     setResult(null);
-    setResultView("table");
     try {
       const res = await fetch("/api/sql/execute", {
         method: "POST",
@@ -118,7 +120,6 @@ export function SqlConsole() {
     const newSql = before + space + text + after;
     setSql(newSql);
     setActivePreset(null);
-    // Restore cursor after insert
     requestAnimationFrame(() => {
       const pos = start + space.length + text.length;
       ta.setSelectionRange(pos, pos);
@@ -156,87 +157,111 @@ export function SqlConsole() {
 
   const highlighted = useMemo(() => highlightSql(sql), [sql]);
   const lines = sql.split("\n");
+  const presetInfo = activePreset ? getPresetInfo(activePreset) : null;
 
   return (
-    <div className="flex flex-1 min-h-0" style={{ background: "var(--bg-primary)" }}>
-      {/* ── Schema Sidebar (desktop) ─────────────────────────── */}
-      {!isMobile && (
-        <div
-          className="shrink-0 border-r overflow-y-auto"
-          style={{
-            width: 252,
-            borderColor: "var(--border)",
-            background: "var(--bg-secondary)",
-          }}
-        >
-          <SchemaPanel onInsertText={handleInsertText} />
-        </div>
-      )}
+    <div className="flex-1 overflow-y-auto pb-16" style={{ background: "var(--bg-primary)" }}>
+      <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
 
-      {/* ── Mobile sidebar overlay ───────────────────────────── */}
-      {isMobile && sidebarOpen && (
-        <div className="fixed inset-0 z-50 flex">
+        {/* ── Page Title (aligned with DEX Screener header) ──── */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {isMobile && (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="flex items-center justify-center w-8 h-8 rounded-lg"
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 18, color: "var(--text-secondary)" }}>menu</span>
+              </button>
+            )}
+            <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--accent-teal)" }}>terminal</span>
+            <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+              Explore the data yourself
+            </span>
+            <span className="text-xs hidden md:inline" style={{ color: "var(--text-muted)" }}>
+              &mdash; query 7M+ rows on TiDB
+            </span>
+          </div>
+          <div className="text-xs hidden sm:block" style={{ color: "var(--text-muted)" }}>
+            Cmd+Enter to run &middot; Cmd+L to clear
+          </div>
+        </div>
+
+        {/* ── Preset Query Chips ─────────────────────────────── */}
+        <QueryChips
+          activePreset={activePreset}
+          onSelect={handlePresetSelect}
+          onClear={handleClear}
+          disabled={loading}
+        />
+
+        {/* ── Query Description Bar ─────────────────────────── */}
+        {presetInfo && (
           <div
-            className="absolute inset-0"
-            style={{ background: "rgba(0,0,0,0.5)" }}
-            onClick={() => setSidebarOpen(false)}
-          />
-          <div
-            className="relative w-72 overflow-y-auto animate-fade-in"
-            style={{ background: "var(--bg-secondary)" }}
+            className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs"
+            style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}
           >
-            <SchemaPanel onInsertText={(t) => { handleInsertText(t); setSidebarOpen(false); }} />
+            <span
+              className="material-symbols-outlined shrink-0 mt-px"
+              style={{ fontSize: 14, color: presetInfo.color }}
+            >
+              {presetInfo.icon}
+            </span>
+            <span style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              {presetInfo.description}
+            </span>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Main Content ─────────────────────────────────────── */}
-      <div className="flex-1 min-w-0 overflow-y-auto pb-16">
-        <div className="p-4 md:p-6 max-w-[1200px] mx-auto space-y-4">
-          {/* Page Title */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {isMobile && (
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: 18, color: "var(--text-secondary)" }}>menu</span>
-                </button>
-              )}
-              <h1 className="font-mono text-lg md:text-xl font-bold" style={{ color: "var(--text-primary)" }}>
-                <span style={{ color: "var(--accent-teal)" }}>&gt;_</span> sql console
-              </h1>
-            </div>
-            <div className="text-xs hidden sm:block" style={{ color: "var(--text-muted)" }}>
-              {isMobile ? "" : "Cmd+Enter to run · Cmd+L to clear"}
-            </div>
-          </div>
-
-          {/* Preset Query Chips */}
-          <QueryChips
-            activePreset={activePreset}
-            onSelect={handlePresetSelect}
-            onClear={handleClear}
-            disabled={loading}
-          />
-
-          {/* ── SQL Editor ───────────────────────────────────── */}
-          <div>
+        {/* ═══ ROW 1: Schema + SQL Editor side by side ═══════ */}
+        <div className={`flex items-stretch gap-4 ${isMobile ? "flex-col" : ""}`} style={{ height: isMobile ? undefined : 380 }}>
+          {/* Schema Panel */}
+          {!isMobile && (
             <div
-              className="relative rounded-lg border overflow-hidden"
-              style={{ background: "#1E1E1E", borderColor: "var(--border)" }}
+              className="shrink-0 rounded-lg border overflow-hidden flex flex-col"
+              style={{
+                width: 252,
+                borderColor: "var(--border)",
+                background: "var(--bg-secondary)",
+              }}
+            >
+              <SchemaPanel onInsertText={handleInsertText} />
+            </div>
+          )}
+
+          {/* Mobile sidebar overlay */}
+          {isMobile && sidebarOpen && (
+            <div className="fixed inset-0 z-50 flex">
+              <div
+                className="absolute inset-0"
+                style={{ background: "rgba(0,0,0,0.5)" }}
+                onClick={() => setSidebarOpen(false)}
+              />
+              <div
+                className="relative w-72 overflow-y-auto animate-fade-in"
+                style={{ background: "var(--bg-secondary)" }}
+              >
+                <SchemaPanel onInsertText={(t) => { handleInsertText(t); setSidebarOpen(false); }} />
+              </div>
+            </div>
+          )}
+
+          {/* SQL Editor — stretches to fill row height */}
+          <div className="flex-1 min-w-0 flex flex-col">
+            <div
+              className="relative rounded-lg border overflow-hidden flex flex-col flex-1"
+              style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}
             >
               {/* Line numbers + highlighted code */}
-              <div className="flex" style={{ minHeight: isMobile ? 120 : 180 }}>
+              <div className="flex flex-1" style={{ minHeight: isMobile ? 120 : 180 }}>
                 {/* Line number gutter */}
                 <div
                   className="shrink-0 py-3 text-right select-none font-mono text-xs leading-relaxed"
                   style={{
                     width: 40,
                     color: "var(--text-muted)",
-                    background: "rgba(255,255,255,0.02)",
+                    background: "var(--bg-secondary)",
                     borderRight: "1px solid var(--border)",
                     paddingRight: 8,
                     paddingLeft: 4,
@@ -276,10 +301,10 @@ export function SqlConsole() {
                 </div>
               </div>
 
-              {/* Run button bar inside editor */}
+              {/* Run button bar */}
               <div
                 className="flex items-center justify-between px-3 py-2 border-t"
-                style={{ borderColor: "var(--border)", background: "rgba(255,255,255,0.02)" }}
+                style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
               >
                 <div className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>
                   {lines.length} line{lines.length > 1 ? "s" : ""}
@@ -299,160 +324,222 @@ export function SqlConsole() {
                   ) : (
                     <span className="material-symbols-outlined" style={{ fontSize: 14 }}>play_arrow</span>
                   )}
-                  {loading ? "running..." : "\u25B6 run"}
+                  {loading ? "running..." : "Run"}
                 </button>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* ── Execution Metadata ───────────────────────────── */}
-          {result && (
-            <div
-              className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 rounded-lg text-xs font-mono"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
-            >
-              <span style={{ color: "var(--text-secondary)" }}>
-                Query completed in{" "}
-                <span style={{ color: "var(--accent-green)" }}>{result.executionTimeMs}ms</span>
-              </span>
-              <span style={{ color: "var(--text-muted)" }}>&middot;</span>
-              <span style={{ color: "var(--text-secondary)" }}>
-                <span style={{ color: "var(--text-primary)" }}>{result.rowCount.toLocaleString()}</span> rows returned
-              </span>
-              <span className="ml-auto flex items-center gap-1" style={{ color: "var(--accent-teal)" }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 13 }}>bolt</span>
-                TiDB Essential
-              </span>
+        {/* ═══ ROW 2: Results (full width below) ═════════════ */}
+
+        {/* Execution Metadata */}
+        {result && (
+          <div
+            className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 rounded-lg text-xs font-mono"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+          >
+            <span style={{ color: "var(--text-secondary)" }}>
+              Query completed in{" "}
+              <span style={{ color: "var(--accent-green)" }}>{result.executionTimeMs}ms</span>
+            </span>
+            <span style={{ color: "var(--text-muted)" }}>&middot;</span>
+            <span style={{ color: "var(--text-secondary)" }}>
+              <span style={{ color: "var(--text-primary)" }}>{result.rowCount.toLocaleString()}</span> rows returned
+            </span>
+            <span className="ml-auto flex items-center gap-1" style={{ color: "var(--accent-teal)" }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>bolt</span>
+              TiDB Essential
+            </span>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && (
+          <div
+            className="rounded-lg border p-4 text-sm font-mono"
+            style={{
+              background: "rgba(239, 68, 68, 0.08)",
+              borderColor: "rgba(239, 68, 68, 0.3)",
+              color: "#EF4444",
+            }}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>error</span>
+              <span className="font-medium font-sans">Query Error</span>
             </div>
-          )}
+            {error}
+          </div>
+        )}
 
-          {/* ── Error State ──────────────────────────────────── */}
-          {error && (
+        {/* Results Panel */}
+        {result && (
+          <div>
+            {/* Results header */}
             <div
-              className="rounded-lg border p-4 text-sm font-mono"
+              className="flex items-center px-4 py-3 rounded-t-lg border border-b-0"
               style={{
-                background: "rgba(239, 68, 68, 0.08)",
-                borderColor: "rgba(239, 68, 68, 0.3)",
-                color: "#EF4444",
+                background: "var(--bg-hover)",
+                borderColor: "var(--border)",
               }}
             >
-              <div className="flex items-center gap-2 mb-1">
-                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>error</span>
-                <span className="font-medium font-sans">Query Error</span>
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--accent-teal)" }}>table_chart</span>
+                <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                  Query Results
+                </span>
+                <span
+                  className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium"
+                  style={{ background: "var(--accent-teal)", color: "#fff" }}
+                >
+                  {result.rowCount.toLocaleString()} rows
+                </span>
               </div>
-              {error}
             </div>
-          )}
 
-          {/* ── Results Panel ────────────────────────────────── */}
-          {result && (
-            <div>
-              {/* Results header */}
-              <div
-                className="flex items-center justify-between px-4 py-2.5 rounded-t-lg border border-b-0"
-                style={{ background: "var(--bg-hover)", borderColor: "var(--border)" }}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono font-medium uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
-                    Query Results
-                  </span>
-                  <span
-                    className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium"
-                    style={{ background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-                  >
-                    {result.rowCount.toLocaleString()} rows
-                  </span>
+            {/* Results body — table */}
+            <div
+              className="border overflow-hidden"
+              style={{ borderColor: "var(--border)" }}
+            >
+              {result.rows.length === 0 ? (
+                <div className="p-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+                  No results returned
                 </div>
-                <div className="flex items-center rounded-md overflow-hidden border" style={{ borderColor: "var(--border)" }}>
-                  <button
-                    onClick={() => setResultView("table")}
-                    className="flex items-center gap-1 px-3 py-1 text-xs font-medium transition-colors"
-                    style={{
-                      background: resultView === "table" ? "var(--bg-card)" : "transparent",
-                      color: resultView === "table" ? "var(--text-primary)" : "var(--text-muted)",
-                    }}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>table_rows</span>
-                    Table
-                  </button>
-                  <button
-                    onClick={() => setResultView("chart")}
-                    className="flex items-center gap-1 px-3 py-1 text-xs font-medium transition-colors"
-                    style={{
-                      background: resultView === "chart" ? "var(--bg-card)" : "transparent",
-                      color: resultView === "chart" ? "var(--text-primary)" : "var(--text-muted)",
-                    }}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>bar_chart</span>
-                    Chart
-                  </button>
-                </div>
-              </div>
-
-              {/* Results body */}
-              <div
-                className="rounded-b-lg border overflow-hidden"
-                style={{ borderColor: "var(--border)" }}
-              >
-                {resultView === "chart" ? (
-                  <div className="p-4" style={{ background: "var(--bg-primary)" }}>
-                    <ResultsChart columns={result.columns} rows={result.rows} />
-                  </div>
-                ) : result.rows.length === 0 ? (
-                  <div className="p-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
-                    No results returned
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto" style={{ maxHeight: isMobile ? 400 : 500 }}>
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr style={{ background: "var(--bg-card)" }}>
+              ) : (
+                <div className="overflow-auto" style={{ maxHeight: isMobile ? 320 : 10 * 37 + 37 }}>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr style={{ background: "var(--bg-secondary)" }}>
+                        {result.columns.map((col) => (
+                          <th
+                            key={col}
+                            className="text-left px-3 py-2.5 font-semibold text-xs uppercase tracking-wide whitespace-nowrap border-b sticky top-0"
+                            style={{ color: "var(--text-primary)", borderColor: "var(--border)", background: "var(--bg-secondary)" }}
+                          >
+                            {col}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.rows.map((row, i) => (
+                        <tr
+                          key={i}
+                          className="transition-colors"
+                          style={{ background: i % 2 === 0 ? "var(--bg-primary)" : "var(--bg-card)" }}
+                        >
                           {result.columns.map((col) => (
-                            <th
+                            <td
                               key={col}
-                              className="text-left px-3 py-2.5 font-medium text-xs whitespace-nowrap border-b sticky top-0"
-                              style={{ color: "var(--text-secondary)", borderColor: "var(--border)", background: "var(--bg-card)" }}
+                              className="px-3 py-2 whitespace-nowrap border-b font-mono text-xs"
+                              style={{ color: "var(--text-primary)", borderColor: "var(--border)" }}
                             >
-                              {col}
-                            </th>
+                              <CellValue value={row[col]} column={col} />
+                            </td>
                           ))}
                         </tr>
-                      </thead>
-                      <tbody>
-                        {result.rows.map((row, i) => (
-                          <tr
-                            key={i}
-                            className="transition-colors"
-                            style={{ background: i % 2 === 0 ? "var(--bg-primary)" : "var(--bg-card)" }}
-                          >
-                            {result.columns.map((col) => (
-                              <td
-                                key={col}
-                                className="px-3 py-2 whitespace-nowrap border-b font-mono text-xs"
-                                style={{ color: "var(--text-primary)", borderColor: "var(--border)" }}
-                              >
-                                <CellValue value={row[col]} column={col} />
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Chart — always shown below table */}
+            {result.rows.length > 0 && (
+              <div
+                className="rounded-b-lg border border-t-0 p-4"
+                style={{ borderColor: "var(--border)", background: "var(--bg-card)" }}
+              >
+                <ResultsChart columns={result.columns} rows={result.rows} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Empty state with table placeholder ─────────────── */}
+        {!result && !error && !loading && (
+          <div
+            className="rounded-lg border overflow-hidden"
+            style={{ borderColor: "var(--border)" }}
+          >
+            {/* Header bar — matches active result header style */}
+            <div
+              className="flex items-center px-4 py-3 border-b"
+              style={{ background: "var(--bg-hover)", borderColor: "var(--border)" }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--text-muted)" }}>table_chart</span>
+                <span className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
+                  Query Results
+                </span>
+                <span
+                  className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium"
+                  style={{ background: "var(--bg-card)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
+                >
+                  0 rows
+                </span>
               </div>
             </div>
-          )}
 
-          {/* ── Empty state ──────────────────────────────────── */}
-          {!result && !error && !loading && (
-            <div className="py-16 text-center" style={{ color: "var(--text-muted)" }}>
-              <span className="material-symbols-outlined mb-3 block" style={{ fontSize: 48, opacity: 0.2 }}>terminal</span>
-              <div className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>Run a query to see results</div>
-              <div className="text-xs mt-1">Pick a preset above, or write your own SQL in the editor</div>
+            {/* Placeholder table skeleton */}
+            <div className="overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ background: "var(--bg-card)" }}>
+                    {PLACEHOLDER_COLS.map((col, i) => (
+                      <th
+                        key={col}
+                        className="text-left px-3 py-2.5 font-medium text-xs whitespace-nowrap border-b"
+                        style={{ color: "var(--text-muted)", borderColor: "var(--border)", width: PLACEHOLDER_WIDTHS[i] }}
+                      >
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 5 }).map((_, rowIdx) => (
+                    <tr
+                      key={rowIdx}
+                      style={{ background: rowIdx % 2 === 0 ? "var(--bg-primary)" : "var(--bg-card)" }}
+                    >
+                      {PLACEHOLDER_WIDTHS.map((w, colIdx) => (
+                        <td
+                          key={colIdx}
+                          className="px-3 py-2.5 border-b"
+                          style={{ borderColor: "var(--border)" }}
+                        >
+                          <div
+                            className="rounded"
+                            style={{
+                              height: 12,
+                              width: w * (0.5 + Math.random() * 0.4),
+                              background: "var(--bg-hover)",
+                              opacity: 0.6 - rowIdx * 0.08,
+                            }}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Overlay message */}
+              <div
+                className="flex flex-col items-center justify-center py-8 -mt-32 relative z-10"
+                style={{ background: "linear-gradient(transparent, var(--bg-primary) 40%)" }}
+              >
+                <span className="material-symbols-outlined mb-2" style={{ fontSize: 36, color: "var(--text-muted)", opacity: 0.4 }}>terminal</span>
+                <div className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>Run a query to see results</div>
+                <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Pick a preset above, or write your own SQL</div>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
       </div>
     </div>
   );

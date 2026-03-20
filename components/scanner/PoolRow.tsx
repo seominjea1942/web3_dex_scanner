@@ -1,10 +1,10 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import type { Pool } from "@/lib/types";
 import type { Breakpoint } from "@/hooks/useBreakpoint";
 import { formatPrice, formatUsd, formatPercent, formatNumber, truncateAddress, formatAge } from "@/lib/format";
 import { CopyButton } from "@/components/ui/CopyButton";
-import { toast } from "@/components/ui/Toast";
 
 interface PoolRowProps {
   pool: Pool;
@@ -22,6 +22,7 @@ function PriceChange({ value }: { value: number }) {
 }
 
 export function PoolRow({ pool, rank, breakpoint: bp }: PoolRowProps) {
+  const router = useRouter();
   // Derive initials: prefer symbol, fall back to pair_label split, then "?"
   const [pairBase, pairQuote] = (pool.pair_label || "").split("/");
   const baseInitial = (pool.base_symbol || pairBase || "?")[0];
@@ -31,7 +32,7 @@ export function PoolRow({ pool, rank, breakpoint: bp }: PoolRowProps) {
     <tr
       className="pool-row border-b transition-colors cursor-pointer"
       style={{ borderColor: "var(--border)" }}
-      onClick={() => toast("Token detail page coming soon 🚀")}
+      onClick={() => router.push(`/pool/${pool.id}`)}
     >
       {/* Rank */}
       <td className="px-4 py-3 text-sm font-mono sticky left-0 z-10" style={{ color: "var(--text-muted)", background: "var(--bg-primary)" }}>

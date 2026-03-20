@@ -10,7 +10,6 @@ interface NavbarProps {
 
 const NAV_ITEMS = [
   { label: "DEX Screener", page: "screener" },
-  { label: "Portfolio", page: "portfolio", comingSoon: true },
   { label: "SQL Console", page: "sql-console" },
 ];
 
@@ -20,14 +19,14 @@ export function Navbar({ activePage = "screener", onNavigate }: NavbarProps) {
   const [comingSoonMsg, setComingSoonMsg] = useState<string | null>(null);
 
   return (
-    <nav
-      className="z-50 flex items-center justify-between px-4 border-b"
-      style={{
-        background: "var(--bg-secondary)",
-        borderColor: "var(--border)",
-        height: 54,
-      }}
-    >
+    <div className="z-50" style={{ background: "var(--bg-secondary)" }}>
+      <nav
+        className="flex items-center justify-between px-4 border-b"
+        style={{
+          borderColor: "var(--border)",
+          height: 54,
+        }}
+      >
       {/* Left: Logo + Nav */}
       <div className="flex items-center gap-6 self-stretch">
         <svg width="140" height="48" viewBox="0 0 140 48" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-12 w-auto">
@@ -50,14 +49,7 @@ export function Navbar({ activePage = "screener", onNavigate }: NavbarProps) {
             return (
               <button
                 key={item.label}
-                onClick={() => {
-                  if (item.comingSoon) {
-                    setComingSoonMsg(item.label);
-                    setTimeout(() => setComingSoonMsg(null), 2000);
-                  } else {
-                    onNavigate?.(item.page);
-                  }
-                }}
+                onClick={() => onNavigate?.(item.page)}
                 className="relative px-1 text-sm font-medium transition-colors flex items-center"
                 style={{
                   color: isActive ? "var(--text-primary)" : "var(--text-muted)",
@@ -159,5 +151,34 @@ export function Navbar({ activePage = "screener", onNavigate }: NavbarProps) {
         </div>
       )}
     </nav>
+
+    {/* Mobile tab bar — second row */}
+    <div
+      className="flex md:hidden items-stretch border-b"
+      style={{ borderColor: "var(--border)", height: 40 }}
+    >
+      {NAV_ITEMS.map((item) => {
+        const isActive = activePage === item.page;
+        return (
+          <button
+            key={item.label}
+            onClick={() => onNavigate?.(item.page)}
+            className="relative flex-1 text-xs font-medium transition-colors flex items-center justify-center"
+            style={{
+              color: isActive ? "var(--text-primary)" : "var(--text-muted)",
+            }}
+          >
+            {item.label}
+            {isActive && (
+              <span
+                className="absolute left-0 right-0 h-0.5"
+                style={{ background: "var(--accent-blue, #6366F1)", bottom: 0 }}
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+    </div>
   );
 }
