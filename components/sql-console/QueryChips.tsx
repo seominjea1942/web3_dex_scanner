@@ -89,16 +89,15 @@ LIMIT 20`,
     label: "search events",
     icon: "search",
     color: "var(--accent-purple)",
-    tooltip: "TiCI full-text search: MATCH...AGAINST with relevance ranking — no Elasticsearch needed",
-    description: "Full-text search on event descriptions — powered by TiCI (no Elasticsearch needed). Try changing 'whale' to 'liquidity' or 'smart money'.",
+    tooltip: "TiKV pushdown: LIKE filter on 100K+ event descriptions at storage layer",
+    description: "Search on-chain events by keyword. Try changing 'whale' to 'liquidity', 'smart money', or any token name.",
     sql: `SELECT event_type, severity, dex,
        ROUND(usd_value, 2) AS usd_value,
        description,
-       FROM_UNIXTIME(timestamp / 1000) AS event_time,
-       MATCH(description) AGAINST('whale' IN NATURAL LANGUAGE MODE) AS relevance
+       FROM_UNIXTIME(timestamp / 1000) AS event_time
 FROM defi_events
-WHERE MATCH(description) AGAINST('whale' IN NATURAL LANGUAGE MODE)
-ORDER BY relevance DESC
+WHERE description LIKE '%whale%'
+ORDER BY timestamp DESC
 LIMIT 20`,
   },
   // ── Tier 3: Standard queries ──
