@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
-import { replayOneEvent } from "@/lib/event-replay";
 import type { RowDataPacket } from "mysql2";
 
 export const runtime = "nodejs";
@@ -16,19 +15,6 @@ export async function GET(req: NextRequest) {
   try {
     const db = getPool();
     const params = req.nextUrl.searchParams;
-
-    // Lazy replay: if last event is older than 3s, generate new ones
-    // v2: timestamp is BIGINT (ms), compute age in seconds
-    const [ageRows] = await db.query<RowDataPacket[]>(
-      `SELECT (UNIX_TIMESTAMP() * 1000 - MAX(timestamp)) / 1000 as age FROM defi_events`
-    );
-    const age = (ageRows[0] as Record<string, unknown>)?.age as number | null;
-    if (age === null || age > 8) {
-      const count = 1 + Math.floor(Math.random() * 2);
-      for (let i = 0; i < count; i++) {
-        await replayOneEvent();
-      }
-    }
 
     const type = params.get("type"); // comma-separated: "whale,new_pool,liquidity,smart_money"
     const limit = Math.min(100, Math.max(1, parseInt(params.get("limit") || "30")));
@@ -54,7 +40,6 @@ export async function GET(req: NextRequest) {
         queryParams.push(...v2Types);
       }
     }
-    // v2 doesn't have 'swap' event_type, so no need for the old "event_type != 'swap'" filter
 
     if (minAmount > 0) {
       where += " AND usd_value >= ?";

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import { generateSpikeMetrics } from "@/lib/spike-generator";
-import { replayOneEvent } from "@/lib/event-replay";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,13 +25,7 @@ export async function POST(req: NextRequest) {
       [m.wt, m.ql, m.qps, m.conn]
     );
 
-    // Replay 1-3 events
-    const eventCount = 1 + Math.floor(Math.random() * 3);
-    for (let i = 0; i < eventCount; i++) {
-      await replayOneEvent();
-    }
-
-    return NextResponse.json({ ok: true, events: eventCount });
+    return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("POST /api/refresh/metrics error:", e);
     return NextResponse.json({ error: "Failed to refresh" }, { status: 500 });
