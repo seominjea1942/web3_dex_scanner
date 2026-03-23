@@ -48,7 +48,7 @@ export function LiquidityPools({ tokenAddress, currentPoolAddress, onNavigate }:
         <span className="material-symbols-outlined" style={{ fontSize: 18, color: "var(--accent-teal)" }}>account_balance</span>
         <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Liquidity Pools</span>
         <span
-          className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+          className="text-xs font-semibold px-2 py-0.5 rounded-full"
           style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}
         >
           {pools.length} pools
@@ -56,7 +56,7 @@ export function LiquidityPools({ tokenAddress, currentPoolAddress, onNavigate }:
       </div>
 
       {/* Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
         {pools.map((pool) => {
           const isCurrent = pool.pool_address === currentPoolAddress;
           const isPositive = pool.price_change_24h >= 0;
@@ -73,7 +73,7 @@ export function LiquidityPools({ tokenAddress, currentPoolAddress, onNavigate }:
             >
               {isCurrent && (
                 <span
-                  className="absolute top-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded"
+                  className="absolute top-2 right-2 text-xs font-bold px-1.5 py-0.5 rounded"
                   style={{ background: "var(--accent-teal)", color: "#fff" }}
                 >
                   VIEWING
@@ -81,19 +81,19 @@ export function LiquidityPools({ tokenAddress, currentPoolAddress, onNavigate }:
               )}
 
               <div className="text-xs font-bold mb-0.5" style={{ color: "var(--text-primary)" }}>{pool.dex}</div>
-              <div className="text-[11px] mb-2" style={{ color: "var(--text-muted)" }}>{pool.pair_name}</div>
+              <div className="text-xs mb-2" style={{ color: "var(--text-muted)" }}>{pool.pair_name}</div>
 
               <div className="flex items-baseline gap-1.5 mb-2">
                 <span className="text-xs font-mono font-medium" style={{ color: "var(--text-primary)" }}>
                   {formatUsd(pool.price)}
                 </span>
-                <span className="text-[10px]" style={{ color: isPositive ? "var(--accent-green)" : "var(--accent-red)" }}>
+                <span className="text-xs" style={{ color: isPositive ? "var(--accent-green)" : "var(--accent-red)" }}>
                   {formatPercent(pool.price_change_24h)}
                 </span>
               </div>
 
               {/* Stats grid */}
-              <div className="grid grid-cols-3 gap-x-2 gap-y-1 text-[10px]">
+              <div className="grid grid-cols-3 gap-x-2 gap-y-1 text-xs">
                 {[
                   { label: "MKT CAP", value: formatUsd(pool.market_cap) },
                   { label: "24H VOL", value: formatUsd(pool.volume_24h) },
@@ -122,7 +122,7 @@ export function LiquidityPools({ tokenAddress, currentPoolAddress, onNavigate }:
         })}
       </div>
 
-      <div className="mt-2 text-[10px]" style={{ color: "var(--text-muted)" }}>
+      <div className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
         relative 24h volume
       </div>
     </div>

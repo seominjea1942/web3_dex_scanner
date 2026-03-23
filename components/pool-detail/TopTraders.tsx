@@ -49,7 +49,7 @@ export function TopTraders({ poolAddress, tokenSymbol }: TopTradersProps) {
         <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--accent-teal)" }}>group</span>
         <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Top Traders</span>
         <span
-          className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+          className="text-xs font-semibold px-2 py-0.5 rounded-full"
           style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}
         >
           {tokenSymbol}
@@ -64,7 +64,7 @@ export function TopTraders({ poolAddress, tokenSymbol }: TopTradersProps) {
                 <th
                   key={col}
                   className="text-left px-3 py-2 font-semibold uppercase tracking-wide whitespace-nowrap border-b"
-                  style={{ color: "var(--text-muted)", borderColor: "var(--border)", fontSize: 10 }}
+                  style={{ color: "var(--text-muted)", borderColor: "var(--border)", fontSize: 12 }}
                 >
                   {col}
                 </th>
@@ -99,10 +99,10 @@ export function TopTraders({ poolAddress, tokenSymbol }: TopTradersProps) {
                   <td className="px-3 py-2">
                     {style && (
                       <span
-                        className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-semibold"
+                        className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded font-semibold"
                         style={{ background: style.bg, color: style.color }}
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: 10 }}>{style.icon}</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: 12 }}>{style.icon}</span>
                         {t.label!.replace("_", " ")}
                       </span>
                     )}

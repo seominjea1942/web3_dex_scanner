@@ -166,15 +166,6 @@ export function SqlConsole() {
         {/* ── Page Title (aligned with DEX Screener header) ──── */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {isMobile && (
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="flex items-center justify-center w-8 h-8 rounded-lg"
-                style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 18, color: "var(--text-secondary)" }}>menu</span>
-              </button>
-            )}
             <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--accent-teal)" }}>terminal</span>
             <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
               Explore the data yourself
@@ -194,6 +185,7 @@ export function SqlConsole() {
           onSelect={handlePresetSelect}
           onClear={handleClear}
           disabled={loading}
+          onSchemaToggle={isMobile ? () => setSidebarOpen(true) : undefined}
         />
 
         {/* ── Query Description Bar ─────────────────────────── */}
@@ -336,21 +328,25 @@ export function SqlConsole() {
         {/* Execution Metadata */}
         {result && (
           <div
-            className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 rounded-lg text-xs font-mono"
+            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 px-4 py-2 rounded-lg text-xs font-mono"
             style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
           >
             <span style={{ color: "var(--text-secondary)" }}>
               Query completed in{" "}
               <span style={{ color: "var(--accent-green)" }}>{result.executionTimeMs}ms</span>
-            </span>
-            <span style={{ color: "var(--text-muted)" }}>&middot;</span>
-            <span style={{ color: "var(--text-secondary)" }}>
+              {" · "}
               <span style={{ color: "var(--text-primary)" }}>{result.rowCount.toLocaleString()}</span> rows returned
             </span>
-            <span className="ml-auto flex items-center gap-1" style={{ color: "var(--accent-teal)" }}>
+            <a
+              href="https://www.pingcap.com/tidb-essential/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 no-underline hover:underline shrink-0"
+              style={{ color: "var(--accent-teal)" }}
+            >
               <span className="material-symbols-outlined" style={{ fontSize: 13 }}>bolt</span>
-              TiDB Essential
-            </span>
+              Powered by TiDB Essential
+            </a>
           </div>
         )}
 
@@ -452,7 +448,7 @@ export function SqlConsole() {
                 className="rounded-b-lg border border-t-0 p-4"
                 style={{ borderColor: "var(--border)", background: "var(--bg-card)" }}
               >
-                <ResultsChart columns={result.columns} rows={result.rows} />
+                <ResultsChart columns={result.columns} rows={result.rows} presetId={activePreset} />
               </div>
             )}
           </div>

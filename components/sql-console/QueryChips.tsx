@@ -4,29 +4,14 @@ import { useState, useRef, useCallback } from "react";
 
 /* ── Preset chip data ────────────────────────────────────────── */
 const PRESETS = [
-  {
-    id: "whale",
-    label: "whale trades",
-    icon: "waves",
-    color: "var(--accent-blue)",
-    tooltip: "HTAP: query live transactional data with no ETL — 7M rows, instant results",
-    description: "Large trades over $5K — spot unusual buying or selling activity from major wallets.",
-    sql: `SELECT signature, trader_wallet,
-       ROUND(usd_value, 2) AS usd_value,
-       side, dex,
-       FROM_UNIXTIME(timestamp / 1000) AS trade_time
-FROM swap_transactions
-WHERE usd_value > 5000
-ORDER BY usd_value DESC
-LIMIT 20`,
-  },
+  // ── Tier 1: Best TiDB demos (HTAP, TiFlash, distributed) ──
   {
     id: "realtime_agg",
     label: "volume by DEX",
     icon: "bar_chart",
     color: "var(--accent-green)",
-    tooltip: "TiFlash columnar engine: full-table aggregation on 7M rows — no pre-computation",
-    description: "Trading volume breakdown by exchange — see which DEX is getting the most action.",
+    tooltip: "TiFlash columnar engine: full-table aggregation on 500K rows — no pre-computation",
+    description: "Compare total trading volume across exchanges. See which DEX handles the most trades and money.",
     sql: `SELECT dex,
        COUNT(*) AS trade_count,
        ROUND(SUM(usd_value), 2) AS total_volume,
@@ -37,31 +22,12 @@ GROUP BY dex
 ORDER BY total_volume DESC`,
   },
   {
-    id: "window_fn",
-    label: "wallet ranking",
-    icon: "leaderboard",
-    color: "var(--accent-teal)",
-    tooltip: "Advanced analytics: window functions (RANK, running totals) — MySQL-compatible",
-    description: "Top wallets ranked by total trading volume with cumulative market share — find out who dominates the market.",
-    sql: `SELECT address, label, trade_count,
-       ROUND(total_volume, 2) AS total_volume,
-       RANK() OVER (ORDER BY total_volume DESC) AS volume_rank,
-       ROUND(SUM(total_volume) OVER (
-         ORDER BY total_volume DESC
-         ROWS UNBOUNDED PRECEDING
-       ), 2) AS cumulative_volume
-FROM wallet_profiles
-WHERE trade_count >= 5
-ORDER BY volume_rank
-LIMIT 20`,
-  },
-  {
     id: "hottest",
     label: "hottest pools",
     icon: "local_fire_department",
     color: "var(--accent-orange)",
     tooltip: "Distributed JOIN: swap_transactions × pools, GROUP BY + HAVING across shards",
-    description: "Pools with the most trading activity — catch momentum early before it shows up on charts.",
+    description: "Find which token pairs have the most trading activity right now. Great for discovering trending tokens early.",
     sql: `SELECT p.token_base_symbol, p.token_quote_symbol,
        p.dex,
        COUNT(*) AS tx_count,
@@ -76,12 +42,55 @@ ORDER BY volume DESC
 LIMIT 15`,
   },
   {
+    id: "time_series",
+    label: "price OHLCV",
+    icon: "timeline",
+    color: "var(--accent-green)",
+    tooltip: "Time-series analytics: GROUP BY date on 720K candles — TiFlash accelerated",
+    description: "Daily price data (Open, High, Low, Close, Volume) for a pool. The raw numbers behind every candlestick chart.",
+    sql: `SELECT DATE(FROM_UNIXTIME(ph.timestamp / 1000)) AS day,
+       ROUND(AVG(ph.close), 6) AS avg_close,
+       ROUND(MAX(ph.high), 6) AS day_high,
+       ROUND(MIN(ph.low), 6) AS day_low,
+       ROUND(SUM(ph.volume), 2) AS total_volume,
+       COUNT(*) AS candles
+FROM price_history ph
+WHERE ph.pool_address = (
+  SELECT address FROM pools
+  ORDER BY volume_24h DESC
+  LIMIT 1
+)
+GROUP BY day
+ORDER BY day
+LIMIT 30`,
+  },
+  // ── Tier 2: Good demos (MySQL compatibility, search) ──
+  {
+    id: "window_fn",
+    label: "wallet ranking",
+    icon: "leaderboard",
+    color: "var(--accent-teal)",
+    tooltip: "Advanced analytics: window functions (RANK, running totals) — MySQL-compatible",
+    description: "See the top traders ranked by total volume. Find out who the biggest players are and how much of the market they control.",
+    sql: `SELECT address, label, trade_count,
+       ROUND(total_volume, 2) AS total_volume,
+       RANK() OVER (ORDER BY total_volume DESC) AS volume_rank,
+       ROUND(SUM(total_volume) OVER (
+         ORDER BY total_volume DESC
+         ROWS UNBOUNDED PRECEDING
+       ), 2) AS cumulative_volume
+FROM wallet_profiles
+WHERE trade_count >= 5
+ORDER BY volume_rank
+LIMIT 20`,
+  },
+  {
     id: "search_events",
     label: "search events",
     icon: "search",
     color: "var(--accent-purple)",
-    tooltip: "Full scan with LIKE on 400K+ rows — TiKV pushdown filters at storage layer",
-    description: "Search DeFi events by keyword — find whale movements, liquidity changes, and smart money activity.",
+    tooltip: "Full scan with LIKE on 100K+ rows — TiKV pushdown filters at storage layer",
+    description: "Search on-chain events by keyword. Try changing 'whale' to 'liquidity', 'smart money', or any token name.",
     sql: `SELECT event_type, severity, dex,
        ROUND(usd_value, 2) AS usd_value,
        description,
@@ -91,13 +100,30 @@ WHERE description LIKE '%whale%'
 ORDER BY timestamp DESC
 LIMIT 20`,
   },
+  // ── Tier 3: Standard queries ──
+  {
+    id: "whale",
+    label: "whale trades",
+    icon: "waves",
+    color: "var(--accent-blue)",
+    tooltip: "HTAP: query live transactional data with no ETL — 500K rows, instant results",
+    description: "Find the biggest trades over $5K. Useful for spotting when large wallets are buying or selling.",
+    sql: `SELECT signature, trader_wallet,
+       ROUND(usd_value, 2) AS usd_value,
+       side, dex,
+       FROM_UNIXTIME(timestamp / 1000) AS trade_time
+FROM swap_transactions
+WHERE usd_value > 5000
+ORDER BY usd_value DESC
+LIMIT 20`,
+  },
   {
     id: "smart_money",
     label: "smart money",
     icon: "diamond",
     color: "var(--accent-red, #EF4444)",
     tooltip: "Multi-condition filter: composite WHERE + ORDER on pre-aggregated profiles",
-    description: "Wallets that are consistently buying with high conviction — track accumulation patterns from experienced traders.",
+    description: "Find wallets that trade frequently across multiple pools. These are often experienced traders worth watching.",
     sql: `SELECT address, label,
        trade_count, buy_count, sell_count,
        ROUND(total_volume, 2) AS total_volume,
@@ -108,27 +134,6 @@ WHERE pools_traded >= 3
   AND trade_count >= 10
 ORDER BY total_volume DESC
 LIMIT 15`,
-  },
-  {
-    id: "time_series",
-    label: "price OHLCV",
-    icon: "timeline",
-    color: "var(--accent-green)",
-    tooltip: "Time-series analytics: GROUP BY date on 2.8M candles — TiFlash accelerated",
-    description: "Price candlestick data (Open, High, Low, Close, Volume) for any pool — the raw data behind every chart.",
-    sql: `SELECT DATE(FROM_UNIXTIME(ph.timestamp / 1000)) AS day,
-       ROUND(AVG(ph.close), 6) AS avg_close,
-       ROUND(MAX(ph.high), 6) AS day_high,
-       ROUND(MIN(ph.low), 6) AS day_low,
-       ROUND(SUM(ph.volume), 2) AS total_volume,
-       COUNT(*) AS candles
-FROM price_history ph
-WHERE ph.pool_address = (
-  SELECT address FROM pools LIMIT 1
-)
-GROUP BY day
-ORDER BY day DESC
-LIMIT 20`,
   },
 ] as const;
 
@@ -145,10 +150,11 @@ interface QueryChipsProps {
   onSelect: (id: string, sql: string) => void;
   onClear: () => void;
   disabled?: boolean;
+  onSchemaToggle?: () => void;
 }
 
 /* ── Component ───────────────────────────────────────────────── */
-export function QueryChips({ activePreset, onSelect, onClear, disabled }: QueryChipsProps) {
+export function QueryChips({ activePreset, onSelect, onClear, disabled, onSchemaToggle }: QueryChipsProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const hideTimeout = useRef<ReturnType<typeof setTimeout>>();
@@ -176,6 +182,27 @@ export function QueryChips({ activePreset, onSelect, onClear, disabled }: QueryC
     >
       {/* Hide webkit scrollbar */}
       <style>{`.query-chips-row::-webkit-scrollbar { display: none; }`}</style>
+
+      {/* Schema toggle (mobile only) — left of trash */}
+      {onSchemaToggle && (
+        <>
+          <button
+            onClick={onSchemaToggle}
+            className="shrink-0 flex items-center justify-center w-8 h-8 rounded-lg border transition-colors"
+            style={{
+              background: "var(--bg-card)",
+              borderColor: "var(--border)",
+              color: "var(--text-muted)",
+            }}
+            title="Toggle schema"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+              account_tree
+            </span>
+          </button>
+          <div className="shrink-0 w-px h-5" style={{ background: "var(--border)" }} />
+        </>
+      )}
 
       {/* Clear / blank query button */}
       <button

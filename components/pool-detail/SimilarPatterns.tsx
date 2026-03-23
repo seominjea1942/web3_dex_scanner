@@ -59,29 +59,27 @@ export function SimilarPatterns({ poolAddress, onNavigate }: SimilarPatternsProp
       style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
+      <div className="mb-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="material-symbols-outlined" style={{ fontSize: 18, color: "var(--accent-purple)" }}>auto_awesome</span>
           <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Similar Patterns</span>
           <span
-            className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+            className="text-xs font-semibold px-2 py-0.5 rounded-full"
             style={{ border: "1px solid var(--accent-purple)", color: "var(--accent-purple)" }}
           >
             TiDB Vector Search
           </span>
+          {queryTime != null && (
+            <span className="text-xs ml-auto" style={{ color: "var(--accent-green)" }}>{queryTime}ms</span>
+          )}
         </div>
-        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-          Pools with similar transaction patterns
-          {queryTime != null && <> · <span style={{ color: "var(--accent-green)" }}>{queryTime}ms</span></>}
-        </span>
-      </div>
-
-      <div className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
-        Pattern similarity computed via TiDB vector embeddings on 5m transaction sequences
+        <div className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+          Pattern similarity computed via TiDB vector embeddings on 5m transaction sequences
+        </div>
       </div>
 
       {/* Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
         {results.map((pool) => {
           const isPositive = pool.price_change_24h >= 0;
           return (
@@ -96,7 +94,7 @@ export function SimilarPatterns({ poolAddress, onNavigate }: SimilarPatternsProp
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{pool.pair_name}</span>
                 <span
-                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                  className="text-xs font-bold px-1.5 py-0.5 rounded"
                   style={{
                     background: "rgba(48, 209, 88, 0.12)",
                     color: "var(--accent-green)",
@@ -109,13 +107,13 @@ export function SimilarPatterns({ poolAddress, onNavigate }: SimilarPatternsProp
                 data={pool.sparkline}
                 color={isPositive ? "var(--accent-green)" : "var(--accent-red)"}
               />
-              <div className="flex items-center justify-between mt-1.5 text-[10px]">
+              <div className="flex items-center justify-between mt-1.5 text-xs">
                 <span style={{ color: "var(--text-muted)" }}>{formatUsd(pool.volume_24h)}</span>
                 <span style={{ color: isPositive ? "var(--accent-green)" : "var(--accent-red)" }}>
                   {formatPercent(pool.price_change_24h)}
                 </span>
               </div>
-              <div className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>{pool.dex}</div>
+              <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{pool.dex}</div>
             </button>
           );
         })}

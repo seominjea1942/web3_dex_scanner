@@ -15,6 +15,9 @@ export interface PoolHeaderData {
   liquidity: number;
   holders: number;
   events_24h: number;
+  volumes?: Record<string, number>;
+  txns?: Record<string, { buys: number; sells: number }>;
+  pool_created_at?: string;
 }
 
 interface PoolHeaderTopProps {
@@ -23,11 +26,11 @@ interface PoolHeaderTopProps {
 }
 
 const RANGE_TO_CHANGE_KEY: Record<string, string> = {
+  "5m": "1h",
+  "15m": "1h",
   "1H": "1h",
-  "6H": "6h",
+  "4H": "6h",
   "1D": "24h",
-  "7D": "24h",
-  "30D": "24h",
 };
 
 /** Top section: token identity + price + change badge */

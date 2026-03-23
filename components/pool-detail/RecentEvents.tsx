@@ -49,10 +49,9 @@ export function RecentEvents({ poolAddress }: RecentEventsProps) {
     >
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--border)" }}>
         <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--accent-orange)" }}>bolt</span>
           <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Recent Events</span>
         </div>
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
           {total24h} events (24h)
         </span>
       </div>
@@ -80,7 +79,7 @@ export function RecentEvents({ poolAddress }: RecentEventsProps) {
                 <div className="text-xs font-medium truncate" style={{ color: "var(--text-primary)" }}>
                   {ev.title}
                 </div>
-                <div className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
                   {ev.time_ago} · {ev.dex}
                 </div>
               </div>

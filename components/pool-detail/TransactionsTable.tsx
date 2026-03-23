@@ -51,7 +51,7 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
   const [direction, setDirection] = useState<string>("all");
   const [walletTypes, setWalletTypes] = useState<Set<string>>(new Set());
   const [minAmount, setMinAmount] = useState<number | null>(null);
-  const [timeRange, setTimeRange] = useState<string>("24h");
+  const [timeRange, setTimeRange] = useState<string>("");
   const [page, setPage] = useState(1);
   const prevIdsRef = useRef<Set<string>>(new Set());
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
@@ -146,7 +146,7 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
             <button
               key={wt}
               onClick={() => toggleWalletType(wt)}
-              className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] border transition-colors"
+              className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border transition-colors"
               style={{
                 background: active ? "var(--bg-hover)" : "transparent",
                 borderColor: active ? "var(--accent-teal)" : "var(--border)",
@@ -168,7 +168,7 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
             <button
               key={amt}
               onClick={() => { setMinAmount(active ? null : amt); setPage(1); }}
-              className="px-2 py-1 rounded-full text-[11px] border transition-colors"
+              className="px-2 py-1 rounded-full text-xs border transition-colors"
               style={{
                 background: active ? "var(--bg-hover)" : "transparent",
                 borderColor: active ? "var(--accent-teal)" : "var(--border)",
@@ -188,8 +188,8 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
           return (
             <button
               key={tr}
-              onClick={() => { setTimeRange(tr); setPage(1); }}
-              className="px-2 py-1 rounded-full text-[11px] border transition-colors"
+              onClick={() => { setTimeRange(active ? "" : tr); setPage(1); }}
+              className="px-2 py-1 rounded-full text-xs border transition-colors"
               style={{
                 background: active ? "var(--bg-hover)" : "transparent",
                 borderColor: active ? "var(--accent-teal)" : "var(--border)",
@@ -203,7 +203,7 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
       </div>
 
       {/* Result count */}
-      <div className="px-4 py-1.5 text-[11px] border-b" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+      <div className="px-4 py-1.5 text-xs border-b" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
         Showing <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{txns.length.toLocaleString()}</span>
         {" "}of{" "}
         <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{total.toLocaleString()}</span>
@@ -219,7 +219,7 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
                 <th
                   key={col}
                   className="text-left px-3 py-2 font-semibold uppercase tracking-wide whitespace-nowrap sticky top-0 border-b"
-                  style={{ color: "var(--text-muted)", borderColor: "var(--border)", background: "var(--bg-secondary)", fontSize: 10 }}
+                  style={{ color: "var(--text-muted)", borderColor: "var(--border)", background: "var(--bg-secondary)", fontSize: 12 }}
                 >
                   {col}
                 </th>
@@ -274,7 +274,7 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
                       </span>
                       {tx.wallet_label && (
                         <span
-                          className="text-[9px] px-1 py-px rounded font-semibold"
+                          className="text-xs px-1 py-px rounded font-semibold"
                           style={{
                             background: tx.wallet_label === "whale" ? "rgba(99, 102, 241, 0.15)" : "rgba(129, 140, 248, 0.15)",
                             color: tx.wallet_label === "whale" ? "var(--accent-blue)" : "var(--accent-teal)",
@@ -302,6 +302,42 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {total > 50 && (
+        <div className="flex items-center justify-between px-4 py-2 border-t" style={{ borderColor: "var(--border)" }}>
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+            style={{
+              background: page <= 1 ? "transparent" : "var(--bg-hover)",
+              color: page <= 1 ? "var(--text-muted)" : "var(--text-primary)",
+              opacity: page <= 1 ? 0.5 : 1,
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>chevron_left</span>
+            Prev
+          </button>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Page <span style={{ color: "var(--text-primary)" }}>{page}</span> of{" "}
+            <span style={{ color: "var(--text-primary)" }}>{Math.ceil(total / 50)}</span>
+          </span>
+          <button
+            onClick={() => setPage((p) => p + 1)}
+            disabled={page >= Math.ceil(total / 50)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+            style={{
+              background: page >= Math.ceil(total / 50) ? "transparent" : "var(--bg-hover)",
+              color: page >= Math.ceil(total / 50) ? "var(--text-muted)" : "var(--text-primary)",
+              opacity: page >= Math.ceil(total / 50) ? 0.5 : 1,
+            }}
+          >
+            Next
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>chevron_right</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

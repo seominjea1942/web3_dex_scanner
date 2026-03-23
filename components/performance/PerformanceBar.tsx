@@ -197,7 +197,7 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
             color: "var(--bg-primary)",
           }}
         >
-          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>expand_less</span>
+          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>open_in_full</span>
         </span>
       </div>
     </div>

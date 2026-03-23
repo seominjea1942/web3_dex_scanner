@@ -39,6 +39,14 @@ function getTypeBadge(type: string, key: string): { label: string; color: string
     return { label: "BIG", color: "var(--accent-blue)" };
   if (lower.includes("int"))
     return { label: "INT", color: "var(--accent-blue)" };
+  if (lower.includes("enum"))
+    return { label: "ENUM", color: "var(--accent-orange)" };
+  if (lower.includes("bool") || lower.includes("tinyint(1)"))
+    return { label: "BOOL", color: "var(--accent-green)" };
+  if (lower.includes("json"))
+    return { label: "JSON", color: "var(--accent-purple)" };
+  if (lower.includes("blob") || lower.includes("binary"))
+    return { label: "BIN", color: "var(--text-secondary)" };
   return { label: "?", color: "var(--text-muted)" };
 }
 
@@ -337,9 +345,15 @@ export function SchemaPanel({ onInsertText }: SchemaPanelProps) {
                             style={{
                               color: "var(--text-muted)",
                               fontSize: 10,
-                              flexShrink: 0,
                               marginLeft: "auto",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              maxWidth: "50%",
+                              textAlign: "right",
+                              flexShrink: 1,
                             }}
+                            title={col.type}
                           >
                             {col.type}
                           </span>
@@ -354,18 +368,15 @@ export function SchemaPanel({ onInsertText }: SchemaPanelProps) {
         )}
       </div>
 
-      {/* Footer — height matches SQL editor run bar */}
+      {/* Footer */}
       <div
         className="font-mono"
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
           padding: "8px 12px",
           borderTop: "1px solid var(--border)",
           fontSize: 12,
           color: "var(--text-muted)",
-          minHeight: 45,
+          textAlign: "center",
         }}
       >
         tables: {schema?.table_count ?? 0} &middot; views: {schema?.view_count ?? 0}
