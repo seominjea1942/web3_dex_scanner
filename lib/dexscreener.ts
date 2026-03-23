@@ -101,11 +101,13 @@ export function mapPairToPoolRow(pair: DexScreenerPair) {
 
 export function mapPairToTokenRow(pair: DexScreenerPair, side: "base" | "quote") {
   const token = side === "base" ? pair.baseToken : pair.quoteToken;
+  // Use DexScreener token logo CDN — pair.info?.imageUrl is the social banner, not the logo
+  const logoUrl = `https://dd.dexscreener.com/ds-data/tokens/${pair.chainId}/${token.address}.png`;
   return {
     address: token.address,
     name: token.name,
     symbol: token.symbol,
-    logo_url: pair.info?.imageUrl ?? null,
+    logo_url: logoUrl,
   };
 }
 
