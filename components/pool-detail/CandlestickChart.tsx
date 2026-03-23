@@ -274,11 +274,12 @@ export function CandlestickChart({ poolAddress, timeRange, onTimeRangeChange, mo
           </div>
         )}
 
-        {/* Error state */}
-        {!loading && error && (
+        {/* Error or no data state */}
+        {!loading && (error || (meta && meta.data_points === 0)) && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg" style={{ background: "var(--bg-sidebar)", border: "1px solid var(--border)" }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 28, color: "var(--accent-red)" }}>error</span>
-            <span className="text-sm" style={{ color: "var(--text-secondary)" }}>{error}</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 28, color: "var(--text-muted)" }}>show_chart</span>
+            <span className="text-sm" style={{ color: "var(--text-muted)" }}>No chart data available for this pool</span>
+            <span className="text-xs" style={{ color: "var(--text-muted)", opacity: 0.6 }}>This pool may not have enough trading history</span>
             <button
               onClick={() => onTimeRangeChange(timeRange)}
               className="mt-1 px-3 py-1 rounded text-xs font-medium"
@@ -286,14 +287,6 @@ export function CandlestickChart({ poolAddress, timeRange, onTimeRangeChange, mo
             >
               Retry
             </button>
-          </div>
-        )}
-
-        {/* No data state */}
-        {!loading && !error && meta && meta.data_points === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg" style={{ background: "var(--bg-sidebar)", border: "1px solid var(--border)" }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 28, color: "var(--text-muted)" }}>show_chart</span>
-            <span className="text-sm" style={{ color: "var(--text-muted)" }}>No chart data available for this pool</span>
           </div>
         )}
         {/* OHLCV overlay inside chart */}

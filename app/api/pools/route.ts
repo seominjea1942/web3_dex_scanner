@@ -31,16 +31,16 @@ export async function GET(req: NextRequest) {
       velocity: "(COALESCE(p.volume_1h,0) / GREATEST(p.volume_24h / 24, 1))",
     };
 
-    // Determine effective sort: filter may set a default sort
+    // Filters always override sort to show the most relevant ordering
     let effectiveSort = sort;
     let effectiveOrder = order;
-    if (filter === "hot" && sort === "volume_24h") {
+    if (filter === "hot") {
       effectiveSort = "velocity";
       effectiveOrder = "DESC";
-    } else if (filter === "gainers" && sort === "volume_24h") {
+    } else if (filter === "gainers") {
       effectiveSort = "price_change_24h";
       effectiveOrder = "DESC";
-    } else if (filter === "losers" && sort === "volume_24h") {
+    } else if (filter === "losers") {
       effectiveSort = "price_change_24h";
       effectiveOrder = "ASC";
     }

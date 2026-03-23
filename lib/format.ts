@@ -1,10 +1,12 @@
-export function formatUsd(value: number): string {
-  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`;
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-  if (value >= 1) return `$${value.toFixed(2)}`;
-  if (value >= 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(8)}`;
+export function formatUsd(value: number | null | undefined): string {
+  const num = Number(value);
+  if (!num || isNaN(num) || num <= 0) return "-";
+  if (num >= 1_000_000_000) return `$${(num / 1_000_000_000).toFixed(1)}B`;
+  if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(1)}M`;
+  if (num >= 1_000) return `$${(num / 1_000).toFixed(1)}K`;
+  if (num >= 1) return `$${num.toFixed(2)}`;
+  if (num >= 0.01) return `$${num.toFixed(4)}`;
+  return `$${num.toFixed(8)}`;
 }
 
 export function formatNumber(value: number): string {
