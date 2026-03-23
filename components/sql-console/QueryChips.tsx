@@ -71,7 +71,7 @@ LIMIT 30`,
     icon: "leaderboard",
     color: "var(--accent-teal)",
     tooltip: "Advanced analytics: window functions (RANK, running totals) — MySQL-compatible",
-    description: "See the top traders ranked by total volume. Find out who the biggest players are and how much of the market they control.",
+    description: "Top wallets ranked by volume — labels derived from real trading patterns using TiDB analytics.",
     sql: `SELECT address, label, trade_count,
        ROUND(total_volume, 2) AS total_volume,
        RANK() OVER (ORDER BY total_volume DESC) AS volume_rank,
@@ -89,15 +89,16 @@ LIMIT 20`,
     label: "search events",
     icon: "search",
     color: "var(--accent-purple)",
-    tooltip: "Full scan with LIKE on 100K+ rows — TiKV pushdown filters at storage layer",
-    description: "Search on-chain events by keyword. Try changing 'whale' to 'liquidity', 'smart money', or any token name.",
+    tooltip: "TiCI full-text search: MATCH...AGAINST with relevance ranking — no Elasticsearch needed",
+    description: "Full-text search on event descriptions — powered by TiCI (no Elasticsearch needed). Try changing 'whale' to 'liquidity' or 'smart money'.",
     sql: `SELECT event_type, severity, dex,
        ROUND(usd_value, 2) AS usd_value,
        description,
-       FROM_UNIXTIME(timestamp / 1000) AS event_time
+       FROM_UNIXTIME(timestamp / 1000) AS event_time,
+       MATCH(description) AGAINST('whale' IN NATURAL LANGUAGE MODE) AS relevance
 FROM defi_events
-WHERE description LIKE '%whale%'
-ORDER BY timestamp DESC
+WHERE MATCH(description) AGAINST('whale' IN NATURAL LANGUAGE MODE)
+ORDER BY relevance DESC
 LIMIT 20`,
   },
   // ── Tier 3: Standard queries ──
@@ -123,7 +124,7 @@ LIMIT 20`,
     icon: "diamond",
     color: "var(--accent-red, #EF4444)",
     tooltip: "Multi-condition filter: composite WHERE + ORDER on pre-aggregated profiles",
-    description: "Find wallets that trade frequently across multiple pools. These are often experienced traders worth watching.",
+    description: "Wallets classified as smart money by trade diversity and size — computed in a single SQL query, no ETL pipeline.",
     sql: `SELECT address, label,
        trade_count, buy_count, sell_count,
        ROUND(total_volume, 2) AS total_volume,
