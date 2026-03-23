@@ -95,7 +95,7 @@ export function mapPairToPoolRow(pair: DexScreenerPair) {
     price_change_1h: pair.priceChange?.h1 ?? 0,
     price_change_6h: pair.priceChange?.h6 ?? 0,
     price_change_24h: pair.priceChange?.h24 ?? 0,
-    pool_created_at: pair.pairCreatedAt ? new Date(pair.pairCreatedAt).toISOString().slice(0, 19).replace("T", " ") : null,
+    pool_created_at: pair.pairCreatedAt ? new Date(pair.pairCreatedAt) : null,
   };
 }
 
