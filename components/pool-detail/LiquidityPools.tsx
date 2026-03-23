@@ -112,8 +112,8 @@ export function LiquidityPools({ tokenAddress, currentPoolAddress, onNavigate }:
                   className="h-full rounded-full"
                   style={{
                     width: `${Math.min(pool.volume_share * 100, 100)}%`,
-                    background: isCurrent ? "var(--accent-teal)" : "var(--text-muted)",
-                    opacity: isCurrent ? 1 : 0.5,
+                    background: isCurrent ? "var(--accent-teal)" : "var(--text-secondary)",
+                    opacity: isCurrent ? 1 : 0.7,
                   }}
                 />
               </div>

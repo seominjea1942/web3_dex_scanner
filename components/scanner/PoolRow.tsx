@@ -6,6 +6,15 @@ import type { Breakpoint } from "@/hooks/useBreakpoint";
 import { formatPrice, formatUsd, formatPercent, formatNumber, truncateAddress, formatAge } from "@/lib/format";
 import { CopyButton } from "@/components/ui/CopyButton";
 
+// DEX logos from DexScreener CDN
+const DEX_LOGOS: Record<string, string> = {
+  raydium: "https://dd.dexscreener.com/ds-data/dexes/raydium.png",
+  orca: "https://dd.dexscreener.com/ds-data/dexes/orca.png",
+  meteora: "https://dd.dexscreener.com/ds-data/dexes/meteora.png",
+  jupiter: "https://dd.dexscreener.com/ds-data/dexes/jupiter.png",
+  pumpswap: "https://dd.dexscreener.com/ds-data/dexes/pumpswap.png",
+};
+
 interface PoolRowProps {
   pool: Pool;
   rank: number;
@@ -27,6 +36,7 @@ export function PoolRow({ pool, rank, breakpoint: bp }: PoolRowProps) {
   const [pairBase, pairQuote] = (pool.pair_label || "").split("/");
   const baseInitial = (pool.base_symbol || pairBase || "?")[0];
   const quoteInitial = (pool.quote_symbol || pairQuote || "?")[0];
+  const hasDexLogo = !!(pool.dex_name && DEX_LOGOS[pool.dex_name.toLowerCase()]);
 
   return (
     <tr
@@ -41,10 +51,10 @@ export function PoolRow({ pool, rank, breakpoint: bp }: PoolRowProps) {
 
       {/* Token Cell */}
       <td className="px-3 py-3 sticky left-10 z-10" style={{ background: "var(--bg-primary)" }}>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {/* Logo stack */}
-          <div className="relative w-10 h-8 shrink-0">
-            {/* Base token — fallback initial always rendered behind */}
+          <div className="relative shrink-0" style={{ width: hasDexLogo ? 48 : 34, height: 32 }}>
+            {/* Base token (large) */}
             <div
               className="logo-border w-7 h-7 rounded-full absolute top-0 left-0 z-10 flex items-center justify-center text-xs font-bold"
               style={{ background: "var(--accent-teal)", color: "#000", border: "2px solid var(--bg-primary)" }}
@@ -62,10 +72,10 @@ export function PoolRow({ pool, rank, breakpoint: bp }: PoolRowProps) {
                 }}
               />
             )}
-            {/* Quote token — fallback initial always rendered behind */}
+            {/* Quote token — overlaps base token bottom-right */}
             <div
-              className="logo-border w-5 h-5 rounded-full absolute bottom-0 right-1 z-20 flex items-center justify-center font-bold"
-              style={{ background: "var(--text-muted)", color: "#000", border: "2px solid var(--bg-primary)", fontSize: "8px" }}
+              className="logo-border w-5 h-5 rounded-full absolute z-20 flex items-center justify-center font-bold"
+              style={{ bottom: 0, left: 14, background: "var(--text-muted)", color: "#000", border: "2px solid var(--bg-primary)", fontSize: "8px" }}
             >
               {quoteInitial}
             </div>
@@ -73,8 +83,20 @@ export function PoolRow({ pool, rank, breakpoint: bp }: PoolRowProps) {
               <img
                 src={pool.quote_logo_url}
                 alt={pool.quote_symbol || ""}
-                className="logo-border w-5 h-5 rounded-full absolute bottom-0 right-1 z-20"
-                style={{ border: "2px solid var(--bg-primary)" }}
+                className="logo-border w-5 h-5 rounded-full absolute z-20"
+                style={{ bottom: 0, left: 14, border: "2px solid var(--bg-primary)" }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+            )}
+            {/* DEX icon — same size as quote, overlaps quote by 2px */}
+            {hasDexLogo && (
+              <img
+                src={DEX_LOGOS[pool.dex_name!.toLowerCase()]}
+                alt={pool.dex_name || ""}
+                className="logo-border w-5 h-5 rounded-full absolute z-30"
+                style={{ bottom: 0, left: 28, border: "2px solid var(--bg-primary)", background: "var(--bg-primary)" }}
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}
