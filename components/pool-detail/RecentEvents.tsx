@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { EVENT_TYPE_CONFIG } from "@/lib/constants";
 
 interface PoolEvent {
   id: string;
@@ -14,13 +15,15 @@ interface RecentEventsProps {
   poolAddress: string;
 }
 
-const EVENT_ICONS: Record<string, { icon: string; color: string }> = {
-  whale: { icon: "waves", color: "var(--accent-blue)" },
-  large_trade: { icon: "waves", color: "var(--accent-blue)" },
-  smart_money: { icon: "diamond", color: "var(--accent-teal)" },
-  liquidity_add: { icon: "water_drop", color: "var(--accent-green)" },
-  liquidity_remove: { icon: "water_drop", color: "var(--accent-orange)" },
-  new_pool: { icon: "add_circle", color: "var(--accent-green)" },
+// Map pool event types to EVENT_TYPE_CONFIG keys
+const TYPE_MAP: Record<string, string> = {
+  whale: "whale",
+  large_trade: "whale",
+  smart_money: "smart_money",
+  liquidity_add: "liquidity",
+  liquidity_remove: "liquidity",
+  new_pool: "new_pool",
+  swap: "swap",
 };
 
 export function RecentEvents({ poolAddress }: RecentEventsProps) {
@@ -62,19 +65,15 @@ export function RecentEvents({ poolAddress }: RecentEventsProps) {
             No recent events
           </div>
         ) : events.map((ev) => {
-          const cfg = EVENT_ICONS[ev.type] || { icon: "info", color: "var(--text-muted)" };
+          const configKey = TYPE_MAP[ev.type] || "swap";
+          const cfg = EVENT_TYPE_CONFIG[configKey as keyof typeof EVENT_TYPE_CONFIG] || EVENT_TYPE_CONFIG.swap;
           return (
             <div
               key={ev.id}
               className="flex items-start gap-3 px-4 py-2.5 border-b transition-colors"
               style={{ borderColor: "var(--border)" }}
             >
-              <span
-                className="material-symbols-outlined mt-0.5 shrink-0"
-                style={{ fontSize: 16, color: cfg.color }}
-              >
-                {cfg.icon}
-              </span>
+              <img src={cfg.img} alt={cfg.label} className="w-4 h-4 mt-0.5 shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-medium truncate" style={{ color: "var(--text-primary)" }}>
                   {ev.title}
