@@ -56,8 +56,9 @@ LIMIT 15`,
        COUNT(*) AS candles
 FROM price_history ph
 WHERE ph.pool_address = (
-  SELECT address FROM pools
-  ORDER BY volume_24h DESC
+  SELECT ph2.pool_address FROM price_history ph2
+  GROUP BY ph2.pool_address
+  ORDER BY COUNT(*) DESC
   LIMIT 1
 )
 GROUP BY day
