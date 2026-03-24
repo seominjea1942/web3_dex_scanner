@@ -242,11 +242,11 @@ export function SqlConsole() {
           {/* SQL Editor — stretches to fill row height */}
           <div className="flex-1 min-w-0 flex flex-col">
             <div
-              className="relative rounded-lg border overflow-hidden"
-              style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}
+              className="relative rounded-lg border overflow-hidden flex flex-col"
+              style={{ background: "var(--bg-card)", borderColor: "var(--border)", minHeight: isMobile ? 160 : 0 }}
             >
               {/* Line numbers + highlighted code */}
-              <div className="flex overflow-auto" style={{ minHeight: isMobile ? 120 : 180, maxHeight: isMobile ? 200 : 400 }}>
+              <div className="flex flex-1 overflow-auto">
                 {/* Line number gutter */}
                 <div
                   className="shrink-0 pt-3 pb-3 text-right select-none font-mono text-xs sticky left-0"
