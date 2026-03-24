@@ -242,22 +242,14 @@ export function SqlConsole() {
           {/* SQL Editor — stretches to fill row height */}
           <div className="flex-1 min-w-0 flex flex-col">
             <div
-              className="relative rounded-lg border overflow-hidden flex flex-col flex-1"
+              className="relative rounded-lg border overflow-hidden"
               style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}
             >
               {/* Line numbers + highlighted code */}
-              <div className="flex" style={{ minHeight: isMobile ? 120 : 180, maxHeight: isMobile ? 200 : 420, overflow: "hidden" }}>
-                {/* Line number gutter — syncs scroll with editor */}
+              <div className="flex overflow-auto" style={{ minHeight: isMobile ? 120 : 180, maxHeight: isMobile ? 200 : 400 }}>
+                {/* Line number gutter */}
                 <div
-                  ref={(el) => {
-                    if (el) {
-                      const editor = el.nextElementSibling;
-                      if (editor) {
-                        editor.addEventListener("scroll", () => { el.scrollTop = editor.scrollTop; });
-                      }
-                    }
-                  }}
-                  className="shrink-0 py-3 text-right select-none font-mono text-xs leading-relaxed overflow-hidden"
+                  className="shrink-0 pt-3 pb-3 text-right select-none font-mono text-xs sticky left-0"
                   style={{
                     width: 40,
                     color: "var(--text-muted)",
@@ -268,15 +260,15 @@ export function SqlConsole() {
                   }}
                 >
                   {(sql || " ").split("\n").map((_, i) => (
-                    <div key={i} style={{ lineHeight: "1.6" }}>{i + 1}</div>
+                    <div key={i} style={{ lineHeight: "1.625", height: "1.625em" }}>{i + 1}</div>
                   ))}
                 </div>
 
-                {/* Editor area — scrollable */}
-                <div className="relative flex-1 min-w-0 overflow-y-auto">
+                {/* Editor area */}
+                <div className="relative flex-1 min-w-0">
                   <pre
-                    className="font-mono text-sm p-3 pointer-events-none whitespace-pre-wrap break-words"
-                    style={{ lineHeight: 1.6, margin: 0, color: "transparent" }}
+                    className="font-mono text-sm pt-3 pb-3 pl-3 pr-3 pointer-events-none whitespace-pre-wrap break-words"
+                    style={{ lineHeight: "1.625", margin: 0, color: "transparent" }}
                     aria-hidden
                   >
                     {sql ? highlighted : (
@@ -289,19 +281,19 @@ export function SqlConsole() {
                     value={sql}
                     onChange={(e) => { setSql(e.target.value); setActivePreset(null); }}
                     onKeyDown={handleKeyDown}
-                    className="absolute inset-0 w-full h-full font-mono text-sm p-3 resize-none focus:outline-none"
+                    className="absolute inset-0 w-full h-full font-mono text-sm pt-3 pb-3 pl-3 pr-3 resize-none focus:outline-none"
                     style={{
                       background: "transparent",
                       color: "transparent",
                       caretColor: "var(--text-primary)",
-                      lineHeight: 1.6,
+                      lineHeight: "1.625",
                     }}
                     spellCheck={false}
                   />
                 </div>
               </div>
 
-              {/* Run button bar */}
+              {/* Run button bar — always at bottom */}
               <div
                 className="flex items-center justify-between px-3 py-2 border-t"
                 style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
