@@ -246,12 +246,13 @@ export function SqlConsole() {
               style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}
             >
               {/* Line numbers + highlighted code */}
-              <div className="flex flex-1 overflow-auto" style={{ position: "relative" }}>
-                {/* Gutter background — fills full height */}
-                <div className="absolute top-0 bottom-0 left-0" style={{ width: 40, background: "var(--bg-secondary)", borderRight: "1px solid var(--border)" }} />
+              <div
+                className="flex flex-1 overflow-auto"
+                style={{ backgroundImage: "linear-gradient(to right, var(--bg-secondary) 40px, transparent 40px)" }}
+              >
                 {/* Line number gutter */}
                 <div
-                  className="shrink-0 pt-3 pb-3 text-right select-none font-mono text-xs sticky left-0"
+                  className="shrink-0 pt-3 pb-3 text-right select-none font-mono text-xs"
                   style={{
                     width: 40,
                     color: "var(--text-muted)",
@@ -259,7 +260,6 @@ export function SqlConsole() {
                     borderRight: "1px solid var(--border)",
                     paddingRight: 8,
                     paddingLeft: 4,
-                    zIndex: 1,
                   }}
                 >
                   {(sql || " ").split("\n").map((_, i) => (
