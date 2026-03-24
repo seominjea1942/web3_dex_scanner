@@ -246,7 +246,7 @@ export function SqlConsole() {
               style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}
             >
               {/* Line numbers + highlighted code */}
-              <div className="flex flex-1" style={{ minHeight: isMobile ? 120 : 180 }}>
+              <div className="flex flex-1 overflow-y-auto" style={{ minHeight: isMobile ? 120 : 180, maxHeight: isMobile ? 200 : 320 }}>
                 {/* Line number gutter */}
                 <div
                   className="shrink-0 py-3 text-right select-none font-mono text-xs leading-relaxed"
