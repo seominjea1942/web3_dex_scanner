@@ -13,9 +13,11 @@ import { RecentEvents } from "@/components/pool-detail/RecentEvents";
 import { formatPrice, formatPercent, formatUsd } from "@/lib/format";
 import { TokenSidebar } from "@/components/pool-detail/TokenSidebar";
 
-function TokenIcon({ url, symbol, size = 24 }: { url?: string; symbol: string; size?: number }) {
+function TokenIcon({ url, symbol, size = 24 }: { url?: string | null; symbol: string; size?: number }) {
   const [failed, setFailed] = useState(false);
-  if (!url || failed) {
+  // Normalize dd.dexscreener.com → cdn.dexscreener.com (avoid 301 → 422 chain)
+  const src = url?.replace("dd.dexscreener.com/ds-data/tokens", "cdn.dexscreener.com/tokens") || null;
+  if (!src || failed) {
     return (
       <div
         className="rounded-full shrink-0 flex items-center justify-center font-bold"
@@ -27,7 +29,7 @@ function TokenIcon({ url, symbol, size = 24 }: { url?: string; symbol: string; s
   }
   return (
     <img
-      src={url}
+      src={src}
       alt={symbol}
       className="rounded-full shrink-0"
       style={{ width: size, height: size, background: "var(--bg-hover)" }}
