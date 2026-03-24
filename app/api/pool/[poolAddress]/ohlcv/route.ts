@@ -76,7 +76,7 @@ export async function GET(
     const bucketSec = bucketMs / 1000;
 
     // Helper: run the aggregation query with a price filter range
-    async function aggregateCandles(lower: number, upper: number) {
+    const aggregateCandles = async (lower: number, upper: number) => {
       const [rows] = await db.query<RowDataPacket[]>(
         `SELECT
            FLOOR(timestamp / ?) * ? AS bucket_time,
