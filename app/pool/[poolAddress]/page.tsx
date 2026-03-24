@@ -13,6 +13,29 @@ import { RecentEvents } from "@/components/pool-detail/RecentEvents";
 import { formatPrice, formatPercent, formatUsd } from "@/lib/format";
 import { TokenSidebar } from "@/components/pool-detail/TokenSidebar";
 
+function TokenIcon({ url, symbol, size = 24 }: { url?: string; symbol: string; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) {
+    return (
+      <div
+        className="rounded-full shrink-0 flex items-center justify-center font-bold"
+        style={{ width: size, height: size, background: "var(--bg-hover)", color: "var(--text-secondary)", fontSize: size * 0.45 }}
+      >
+        {symbol.charAt(0)}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt={symbol}
+      className="rounded-full shrink-0"
+      style={{ width: size, height: size, background: "var(--bg-hover)" }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export default function PoolDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -111,13 +134,7 @@ export default function PoolDetailPage() {
               <span className="material-symbols-outlined" style={{ fontSize: 18 }}>arrow_back</span>
             </button>
             <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-              {poolData.base_token.icon_url ? (
-                <img src={poolData.base_token.icon_url} alt="" className="w-6 h-6 rounded-full shrink-0" />
-              ) : (
-                <div className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs font-bold" style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
-                  {poolData.base_token.symbol.charAt(0)}
-                </div>
-              )}
+              <TokenIcon url={poolData.base_token.icon_url} symbol={poolData.base_token.symbol} size={24} />
               <span className="text-sm font-semibold whitespace-nowrap" style={{ color: "var(--text-primary)" }}>
                 {poolData.base_token.symbol}/{poolData.quote_token.symbol}
               </span>
