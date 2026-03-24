@@ -246,10 +246,18 @@ export function SqlConsole() {
               style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}
             >
               {/* Line numbers + highlighted code */}
-              <div className="flex flex-1 overflow-y-auto" style={{ minHeight: isMobile ? 120 : 180, maxHeight: isMobile ? 200 : 320 }}>
-                {/* Line number gutter */}
+              <div className="flex" style={{ minHeight: isMobile ? 120 : 180, maxHeight: isMobile ? 200 : 420, overflow: "hidden" }}>
+                {/* Line number gutter — syncs scroll with editor */}
                 <div
-                  className="shrink-0 py-3 text-right select-none font-mono text-xs leading-relaxed"
+                  ref={(el) => {
+                    if (el) {
+                      const editor = el.nextElementSibling;
+                      if (editor) {
+                        editor.addEventListener("scroll", () => { el.scrollTop = editor.scrollTop; });
+                      }
+                    }
+                  }}
+                  className="shrink-0 py-3 text-right select-none font-mono text-xs leading-relaxed overflow-hidden"
                   style={{
                     width: 40,
                     color: "var(--text-muted)",
@@ -264,8 +272,8 @@ export function SqlConsole() {
                   ))}
                 </div>
 
-                {/* Editor area */}
-                <div className="relative flex-1 min-w-0">
+                {/* Editor area — scrollable */}
+                <div className="relative flex-1 min-w-0 overflow-y-auto">
                   <pre
                     className="font-mono text-sm p-3 pointer-events-none whitespace-pre-wrap break-words"
                     style={{ lineHeight: 1.6, margin: 0, color: "transparent" }}
