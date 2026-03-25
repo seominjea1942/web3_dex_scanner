@@ -43,8 +43,7 @@ interface TrendingData {
 }
 
 interface SearchBarProps {
-  value: string;
-  onChange: (value: string) => void;
+  value?: string;
 }
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -120,8 +119,8 @@ function isNewPool(poolCreatedAt: number | null | undefined): boolean {
 
 /* ── Component ───────────────────────────────────────────── */
 
-export function SearchBar({ value, onChange }: SearchBarProps) {
-  const [local, setLocal] = useState(value);
+export function SearchBar({}: SearchBarProps) {
+  const [local, setLocal] = useState("");
   const [tokenResults, setTokenResults] = useState<TokenResult[]>([]);
   const [eventResults, setEventResults] = useState<EventResult[]>([]);
   const [trending, setTrending] = useState<TrendingData | null>(null);
@@ -132,12 +131,9 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
-  const timer = useRef<NodeJS.Timeout>();
   const searchTimer = useRef<NodeJS.Timeout>();
-  const onChangeRef = useRef(onChange);
   const containerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  onChangeRef.current = onChange;
 
   /* ── Rotate placeholder ──────────────────────────────── */
   useEffect(() => {
@@ -147,12 +143,6 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
     }, 4000);
     return () => clearInterval(interval);
   }, [isFocused, local]);
-
-  /* ── Debounced filter pass-through ───────────────────── */
-  useEffect(() => {
-    timer.current = setTimeout(() => onChangeRef.current(local), 300);
-    return () => clearTimeout(timer.current);
-  }, [local]);
 
   /* ── Fetch trending on focus (empty query) ───────────── */
   const fetchTrending = useCallback(() => {
@@ -217,14 +207,12 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
   function handleSelectPool(pool: TokenResult) {
     setShowDropdown(false);
     setLocal("");
-    onChangeRef.current("");
     router.push(`/pool/${pool.address}`);
   }
 
   function handleSelectEvent(event: EventResult) {
     setShowDropdown(false);
     setLocal("");
-    onChangeRef.current("");
     if (event.pool_address) router.push(`/pool/${event.pool_address}`);
   }
 
@@ -271,7 +259,6 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
         <button
           onClick={() => {
             setLocal("");
-            onChangeRef.current("");
             setShowDropdown(false);
           }}
           className="absolute right-3 top-1/2 -translate-y-1/2"
@@ -344,7 +331,7 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
 
               <Footer
                 engine="tici"
-                timeMs={trending.query_time_ms}
+                timeMs={0}
                 label="Discovery"
               />
             </div>

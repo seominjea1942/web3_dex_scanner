@@ -169,7 +169,6 @@ interface PoolsResponse {
 export function PoolTable() {
   const bp = useBreakpoint();
   const [sort, setSort] = useState<SortField>("volume_24h");
-  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [activeFilter, setActiveFilter] = useState<FilterType>(null);
@@ -181,13 +180,12 @@ export function PoolTable() {
       page: String(page),
       limit: String(pageSize),
     });
-    if (search) params.set("search", search);
     if (activeFilter) params.set("filter", activeFilter);
 
     return fetch(`/api/pools?${params}`).then((r) => r.json()) as Promise<PoolsResponse>;
-  }, [sort, search, page, pageSize, activeFilter]);
+  }, [sort, page, pageSize, activeFilter]);
 
-  const resetKey = `${sort}-${activeFilter}-${search}-${page}-${pageSize}`;
+  const resetKey = `${sort}-${activeFilter}-${page}-${pageSize}`;
   const { data, loading } = usePolling(fetcher, POLLING_INTERVALS.TABLE, true, resetKey);
 
   // Store the last API response as the "base" and apply client-side jitter every 5s
@@ -245,7 +243,7 @@ export function PoolTable() {
     <div className="flex-1 min-w-0">
       {/* Search + Filters */}
       <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-        <SearchBar value={search} onChange={(v) => { setSearch(v); setPage(1); }} />
+        <SearchBar />
         <FilterChips
           activeFilter={activeFilter}
           onFilterChange={(f) => { setActiveFilter(f); setPage(1); }}
