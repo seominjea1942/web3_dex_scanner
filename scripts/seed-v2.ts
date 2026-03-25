@@ -303,6 +303,8 @@ async function insertPools(db: mysql.Pool, pairs: DexScreenerPair[]): Promise<Po
     pools.push(row);
 
     try {
+      // Convert ms timestamp → ISO datetime string for TiDB TIMESTAMP column
+      const createdAtStr = new Date(row.pool_created_at).toISOString().slice(0, 19).replace("T", " ");
       await db.execute(
         `INSERT INTO pools (address, token_base_address, token_quote_address, token_base_symbol,
           token_quote_symbol, dex, price_usd, volume_5m, volume_1h, volume_6h, volume_24h,
@@ -310,19 +312,21 @@ async function insertPools(db: mysql.Pool, pairs: DexScreenerPair[]): Promise<Po
           txns_24h_buys, txns_24h_sells, price_change_5m, price_change_1h, price_change_6h,
           price_change_24h, pool_created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE price_usd = VALUES(price_usd), volume_24h = VALUES(volume_24h)`,
+        ON DUPLICATE KEY UPDATE price_usd = VALUES(price_usd), volume_24h = VALUES(volume_24h),
+          volume_1h = VALUES(volume_1h), liquidity_usd = VALUES(liquidity_usd),
+          market_cap = VALUES(market_cap), last_updated = NOW()`,
         [
           row.address, row.token_base_address, row.token_quote_address, row.token_base_symbol,
           row.token_quote_symbol, row.dex, row.price_usd, row.volume_5m, row.volume_1h,
           row.volume_6h, row.volume_24h, row.liquidity_usd, row.market_cap,
           row.txns_5m_buys, row.txns_5m_sells, row.txns_1h_buys, row.txns_1h_sells,
           row.txns_24h_buys, row.txns_24h_sells, row.price_change_5m, row.price_change_1h,
-          row.price_change_6h, row.price_change_24h, row.pool_created_at,
+          row.price_change_6h, row.price_change_24h, createdAtStr,
         ]
       );
       inserted++;
-    } catch {
-      // Skip duplicates silently
+    } catch (err) {
+      console.error(`  ⚠ Pool insert failed (${row.address}):`, (err as Error).message);
     }
   }
 
@@ -400,17 +404,18 @@ async function insertWallets(db: mysql.Pool, wallets: WalletProfile[]) {
   let inserted = 0;
   const batchRows: unknown[][] = [];
 
+  const msToDatetime = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
   for (const w of wallets) {
     batchRows.push([
       w.address, w.label, w.totalVolume, w.tradeCount,
-      w.buyCount, w.sellCount, w.poolsTraded, w.avgTradeSize,
-      w.firstSeen, w.lastSeen,
+      msToDatetime(w.firstSeen), msToDatetime(w.lastSeen),
     ]);
 
     if (batchRows.length >= BATCH_SIZE) {
-      const ph = batchRows.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(",");
+      const ph = batchRows.map(() => "(?, ?, ?, ?, ?, ?)").join(",");
       await db.execute(
-        `INSERT INTO wallet_profiles (address, label, total_volume, trade_count, buy_count, sell_count, pools_traded, avg_trade_size, first_seen, last_seen) VALUES ${ph}`,
+        `INSERT INTO wallet_profiles (address, label, total_volume_usd, trade_count, first_seen, last_seen) VALUES ${ph}
+         ON DUPLICATE KEY UPDATE label = VALUES(label), total_volume_usd = VALUES(total_volume_usd)`,
         batchRows.flat()
       );
       inserted += batchRows.length;
@@ -420,9 +425,10 @@ async function insertWallets(db: mysql.Pool, wallets: WalletProfile[]) {
   }
 
   if (batchRows.length > 0) {
-    const ph = batchRows.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(",");
+    const ph = batchRows.map(() => "(?, ?, ?, ?, ?, ?)").join(",");
     await db.execute(
-      `INSERT INTO wallet_profiles (address, label, total_volume, trade_count, buy_count, sell_count, pools_traded, avg_trade_size, first_seen, last_seen) VALUES ${ph}`,
+      `INSERT INTO wallet_profiles (address, label, total_volume_usd, trade_count, first_seen, last_seen) VALUES ${ph}
+       ON DUPLICATE KEY UPDATE label = VALUES(label), total_volume_usd = VALUES(total_volume_usd)`,
       batchRows.flat()
     );
     inserted += batchRows.length;
@@ -715,15 +721,18 @@ async function generateTokenSafety(db: mysql.Pool, pools: PoolRow[]) {
       (isSuspicious ? -30 : 0)
     )));
 
+    // Map to existing cloud schema: token_address, holder_count, is_mintable, is_freezable, top10_holder_pct
+    const isMintable = isSuspicious ? 1 : 0;
+    const isFreezable = !lpLocked ? 1 : 0;
     batch.push([
-      t.address, holderCount, Math.round(top10Pct * 100) / 100,
-      lpLocked, isSuspicious, safetyScore,
+      t.address, holderCount, isMintable, isFreezable,
+      Math.round(top10Pct * 100) / 100,
     ]);
 
     if (batch.length >= 500) {
-      const ph = batch.map(() => "(?, ?, ?, ?, ?, ?)").join(",");
+      const ph = batch.map(() => "(?, ?, ?, ?, ?)").join(",");
       await db.execute(
-        `INSERT IGNORE INTO token_safety (token_address, holder_count, top10_holder_pct, lp_locked, is_suspicious, safety_score) VALUES ${ph}`,
+        `INSERT IGNORE INTO token_safety (token_address, holder_count, is_mintable, is_freezable, top10_holder_pct) VALUES ${ph}`,
         batch.flat()
       );
       inserted += batch.length;
@@ -732,9 +741,9 @@ async function generateTokenSafety(db: mysql.Pool, pools: PoolRow[]) {
   }
 
   if (batch.length > 0) {
-    const ph = batch.map(() => "(?, ?, ?, ?, ?, ?)").join(",");
+    const ph = batch.map(() => "(?, ?, ?, ?, ?)").join(",");
     await db.execute(
-      `INSERT IGNORE INTO token_safety (token_address, holder_count, top10_holder_pct, lp_locked, is_suspicious, safety_score) VALUES ${ph}`,
+      `INSERT IGNORE INTO token_safety (token_address, holder_count, is_mintable, is_freezable, top10_holder_pct) VALUES ${ph}`,
       batch.flat()
     );
     inserted += batch.length;

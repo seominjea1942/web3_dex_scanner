@@ -16,7 +16,8 @@ const EVENT_TYPE_MAP: Record<string, string[]> = {
 // STALE_SEC, clone a batch of recent events with fresh timestamps
 // so the demo always looks "live".
 const STALE_SEC = 30;
-const REPLAY_BATCH = 8; // events per generation
+// Generate a small, random number of events each cycle for a natural feel
+const replayBatchSize = () => 1 + Math.floor(Math.random() * 3); // 1-3 events
 
 const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const randomBase58 = (len: number) => {
@@ -46,7 +47,8 @@ async function lazyGenerateEvents(db: MysqlPool) {
   const placeholders: string[] = [];
   const values: (string | number)[] = [];
 
-  for (let i = 0; i < REPLAY_BATCH; i++) {
+  const batchSize = replayBatchSize();
+  for (let i = 0; i < batchSize; i++) {
     const tmpl = templates[Math.floor(Math.random() * templates.length)];
 
     // Mutate: fresh wallet, slightly varied amount, spread timestamps
