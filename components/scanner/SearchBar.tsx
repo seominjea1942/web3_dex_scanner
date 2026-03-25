@@ -506,7 +506,10 @@ function TokenRow({
 
   return (
     <button
-      onClick={() => onSelect(token)}
+      onMouseDown={(e) => {
+        e.preventDefault(); // prevent blur from closing dropdown before click
+        onSelect(token);
+      }}
       className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[var(--bg-hover)] transition-colors border-b"
       style={{ borderColor: "var(--border)" }}
     >
@@ -556,7 +559,7 @@ function TokenRow({
           )}
         </div>
 
-        {/* Second line: name + enrichment badges */}
+        {/* Second line: name + address + enrichment badges */}
         <div className="flex items-center gap-2 mt-0.5">
           {token.token_name && (
             <span
@@ -564,6 +567,14 @@ function TokenRow({
               style={{ color: "var(--text-muted)", maxWidth: 120 }}
             >
               {token.token_name}
+            </span>
+          )}
+          {token.token_base_address && (
+            <span
+              className="text-[10px] font-mono"
+              style={{ color: "var(--text-muted)", opacity: 0.6 }}
+            >
+              {token.token_base_address.slice(0, 4)}...{token.token_base_address.slice(-4)}
             </span>
           )}
           {showEnrichment && (
@@ -663,7 +674,10 @@ function EventRow({
 
   return (
     <button
-      onClick={() => onSelect(event)}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onSelect(event);
+      }}
       className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[var(--bg-hover)] transition-colors border-b"
       style={{ borderColor: "var(--border)" }}
     >
