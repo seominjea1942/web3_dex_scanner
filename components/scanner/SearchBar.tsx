@@ -273,7 +273,7 @@ export function SearchBar({}: SearchBarProps) {
       {/* ── Dropdown ──────────────────────────────────── */}
       {showDropdown && (showTrending || hasQuery) && (
         <div
-          className="absolute top-full left-0 mt-1.5 z-50 rounded-xl border overflow-hidden"
+          className="absolute top-full left-0 mt-1.5 z-50 rounded-xl border overflow-hidden flex flex-col"
           style={{
             background: "var(--bg-card)",
             borderColor: "var(--border)",
@@ -285,56 +285,57 @@ export function SearchBar({}: SearchBarProps) {
         >
           {/* ── Trending state (empty query) ──────── */}
           {showTrending && !hasQuery && (
-            <div className="overflow-y-auto" style={{ maxHeight: 460 }}>
-              {/* Top Gainers */}
-              {trending.gainers.length > 0 && (
-                <>
-                  <SectionHeader icon="trending_up" color="var(--accent-green)" label="Top Gainers" />
-                  {trending.gainers.map((r) => (
-                    <TokenRow
-                      key={r.address}
-                      token={r}
-                      onSelect={handleSelectPool}
-                    />
-                  ))}
-                </>
-              )}
+            <>
+              <div className="overflow-y-auto flex-1 min-h-0">
+                {/* Top Gainers */}
+                {trending.gainers.length > 0 && (
+                  <>
+                    <SectionHeader icon="trending_up" color="var(--accent-green)" label="Top Gainers" />
+                    {trending.gainers.map((r) => (
+                      <TokenRow
+                        key={r.address}
+                        token={r}
+                        onSelect={handleSelectPool}
+                      />
+                    ))}
+                  </>
+                )}
 
-              {/* Whale Alerts */}
-              {trending.whale_alerts.length > 0 && (
-                <>
-                  <SectionHeader icon="waves" color="#0091FF" label="Whale Alerts" />
-                  {trending.whale_alerts.map((e) => (
-                    <EventRow
-                      key={e.id}
-                      event={e}
-                      onSelect={handleSelectEvent}
-                    />
-                  ))}
-                </>
-              )}
+                {/* Whale Alerts */}
+                {trending.whale_alerts.length > 0 && (
+                  <>
+                    <SectionHeader icon="waves" color="#0091FF" label="Whale Alerts" />
+                    {trending.whale_alerts.map((e) => (
+                      <EventRow
+                        key={e.id}
+                        event={e}
+                        onSelect={handleSelectEvent}
+                      />
+                    ))}
+                  </>
+                )}
 
-              {/* New Pools */}
-              {trending.new_pools.length > 0 && (
-                <>
-                  <SectionHeader icon="add_circle" color="var(--accent-green)" label="New Pools" />
-                  {trending.new_pools.map((r) => (
-                    <TokenRow
-                      key={r.address}
-                      token={r}
-                      onSelect={handleSelectPool}
-                      showAge
-                    />
-                  ))}
-                </>
-              )}
-
+                {/* New Pools */}
+                {trending.new_pools.length > 0 && (
+                  <>
+                    <SectionHeader icon="add_circle" color="var(--accent-green)" label="New Pools" />
+                    {trending.new_pools.map((r) => (
+                      <TokenRow
+                        key={r.address}
+                        token={r}
+                        onSelect={handleSelectPool}
+                        showAge
+                      />
+                    ))}
+                  </>
+                )}
+              </div>
               <Footer
                 engine="tici"
                 timeMs={0}
                 label="Discovery"
               />
-            </div>
+            </>
           )}
 
           {/* ── Search results state ──────────────── */}
@@ -390,8 +391,7 @@ export function SearchBar({}: SearchBarProps) {
                 </div>
               ) : (
                 <div
-                  className="overflow-y-auto"
-                  style={{ maxHeight: 460 }}
+                  className="overflow-y-auto flex-1 min-h-0"
                 >
                   {/* Token results */}
                   {tokenResults.length > 0 && (
@@ -504,7 +504,7 @@ function TokenRow({
       <div
         className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 overflow-hidden"
         style={{
-          background: token.logo_url ? "transparent" : "var(--bg-hover)",
+          background: "var(--bg-hover)",
           color: "var(--text-secondary)",
         }}
       >
@@ -514,6 +514,11 @@ function TokenRow({
             src={token.logo_url}
             alt=""
             className="w-full h-full object-cover"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = "none";
+              (e.target as HTMLImageElement).parentElement!.textContent =
+                token.token_base_symbol?.slice(0, 2) || "?";
+            }}
           />
         ) : (
           token.token_base_symbol?.slice(0, 2)
