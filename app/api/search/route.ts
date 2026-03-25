@@ -8,6 +8,9 @@ import {
   parseQueryFilters,
   buildFilterSQL,
   deduplicateByToken,
+  fuzzyMatchSymbol,
+  setSymbolCache,
+  isSymbolCacheStale,
   type QueryIntent,
   type RankedResult,
   type SearchFilter,
@@ -18,6 +21,27 @@ type DB = Pool | PoolConnection;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/* ── Response Cache ─────────────────────────────────────── */
+const CACHE_TTL_MS = 30_000; // 30 seconds
+const CACHE_MAX = 200;
+interface CachedResponse { data: any; ts: number } // eslint-disable-line @typescript-eslint/no-explicit-any
+const responseCache = new Map<string, CachedResponse>();
+
+function getCached(key: string): any | null { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const entry = responseCache.get(key);
+  if (entry && Date.now() - entry.ts < CACHE_TTL_MS) return entry.data;
+  if (entry) responseCache.delete(key);
+  return null;
+}
+
+function setCache(key: string, data: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (responseCache.size >= CACHE_MAX) {
+    const oldest = responseCache.keys().next().value;
+    if (oldest !== undefined) responseCache.delete(oldest);
+  }
+  responseCache.set(key, { data, ts: Date.now() });
+}
 
 const STOP_WORDS = new Set([
   "find", "search", "show", "get", "tokens", "token", "coins", "coin",
@@ -44,8 +68,25 @@ export async function GET(req: NextRequest) {
       search_strategy: "none",
     });
 
+  // Check response cache first
+  const cacheKey = q.toLowerCase().trim();
+  const cached = getCached(cacheKey);
+  if (cached) {
+    return NextResponse.json({ ...cached, _cached: true });
+  }
+
   const db = getPool();
   const start = performance.now();
+
+  // Refresh symbol cache for fuzzy matching (lazy, every 5 min)
+  if (isSymbolCacheStale()) {
+    withTiKV(async (conn) => {
+      const [rows] = await conn.query<RowDataPacket[]>(
+        "SELECT DISTINCT token_base_symbol AS symbol, token_base_address AS address FROM pools"
+      );
+      setSymbolCache(rows.map((r) => ({ symbol: r.symbol, address: r.address })));
+    }).catch(() => {}); // fire-and-forget, non-blocking
+  }
 
   // Parse natural language filters from query: "dog coins under $1" → search "dog coins" + filter price ≤ $1
   const parsed = parseQueryFilters(q);
@@ -81,10 +122,32 @@ export async function GET(req: NextRequest) {
 
       case "exact_symbol":
         tokens = await withTiKV((conn) => searchExactSymbol(conn, q));
+        // Fuzzy fallback: "BONKK" → find BONK via Levenshtein
+        if (tokens.length === 0) {
+          const fuzzyHits = fuzzyMatchSymbol(q);
+          if (fuzzyHits.length > 0) {
+            const fuzzyAddrs = fuzzyHits.map((h) => h.address);
+            tokens = await withTiKV((conn) => searchByTokenAddresses(conn, fuzzyAddrs));
+            usedVector = false; // Mark as fuzzy
+          }
+        }
+        // Still empty? Try vector search
+        if (tokens.length === 0) {
+          tokens = await searchVector(db, q);
+          usedVector = tokens.length > 0;
+        }
         break;
 
       case "prefix":
         tokens = await withTiKV((conn) => searchPrefix(conn, q));
+        // Fuzzy fallback for short typos
+        if (tokens.length === 0) {
+          const fuzzyHits = fuzzyMatchSymbol(q, 1); // stricter for short prefixes
+          if (fuzzyHits.length > 0) {
+            const fuzzyAddrs = fuzzyHits.map((h) => h.address);
+            tokens = await withTiKV((conn) => searchByTokenAddresses(conn, fuzzyAddrs));
+          }
+        }
         break;
 
       case "semantic":
@@ -189,15 +252,33 @@ export async function GET(req: NextRequest) {
     const searchEngine = getSearchEngineLabel(intent, usedVector);
     const queryTimeMs = Math.round(performance.now() - start);
 
-    return NextResponse.json({
+    // Extract trader info if present
+    const traderInfo = tokens.length > 0 && tokens[0]._trader_wallet
+      ? {
+          wallet: tokens[0]._trader_wallet,
+          total_volume: tokens[0]._trader_total_volume,
+          trade_count: tokens[0]._trader_trade_count,
+          unique_tokens: tokens[0]._trader_unique_tokens,
+          buys: tokens[0]._trader_buys,
+          sells: tokens[0]._trader_sells,
+        }
+      : undefined;
+
+    const response = {
       tokens,
       events,
+      trader: traderInfo,
       search_engine: searchEngine,
       search_strategy: intent,
       query_interpreted: queryInterpreted,
       filters_applied: filters.map((f) => f.label),
       query_time_ms: queryTimeMs,
-    });
+    };
+
+    // Cache for 30s (skip caching filter-only queries as they change rapidly)
+    if (!isFilterOnly) setCache(cacheKey, response);
+
+    return NextResponse.json(response);
   } catch (err) {
     console.error("[search] Search failed, using LIKE fallback:", err);
     return likeFallback(db, q, start, queryInterpreted);
@@ -232,6 +313,7 @@ async function searchByAddress(
   db: DB,
   address: string
 ) {
+  // Try pool/token address first
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT p.address, p.token_base_symbol, p.token_quote_symbol,
             p.token_base_address, p.price_usd, p.volume_24h,
@@ -245,6 +327,103 @@ async function searchByAddress(
      ORDER BY p.volume_24h DESC
      LIMIT 10`,
     [address, address]
+  );
+
+  if (rows.length > 0) return rows;
+
+  // Not a pool/token? Check if it's a trader wallet
+  const [traderRows] = await db.query<RowDataPacket[]>(
+    `SELECT
+       s.pool_address, s.side, s.usd_value, s.base_amount, s.timestamp, s.dex,
+       p.token_base_symbol, p.token_quote_symbol, p.price_usd
+     FROM swap_transactions s
+     LEFT JOIN pools p ON s.pool_address = p.address
+     WHERE s.trader_wallet = ?
+     ORDER BY s.timestamp DESC
+     LIMIT 20`,
+    [address]
+  );
+
+  if (traderRows.length > 0) {
+    // Aggregate trader stats and return as a special result
+    const totalVol = traderRows.reduce((sum, r) => sum + Number(r.usd_value || 0), 0);
+    const uniqueTokens = new Set(traderRows.map((r) => r.token_base_symbol)).size;
+    const buys = traderRows.filter((r) => r.side === "buy").length;
+    const sells = traderRows.filter((r) => r.side === "sell").length;
+
+    // Get the most-traded token pools for this wallet
+    const tokenCounts = new Map<string, { count: number; pool: string; symbol: string }>();
+    for (const r of traderRows) {
+      const sym = r.token_base_symbol || "?";
+      const existing = tokenCounts.get(sym);
+      if (!existing || existing.count < (existing.count + 1)) {
+        tokenCounts.set(sym, {
+          count: (existing?.count || 0) + 1,
+          pool: r.pool_address,
+          symbol: sym,
+        });
+      }
+    }
+
+    // Look up pools for the trader's most-traded tokens
+    const topSymbols = Array.from(tokenCounts.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+    const poolAddrs = topSymbols.map((s) => s.pool);
+    if (poolAddrs.length > 0) {
+      const ph = poolAddrs.map(() => "?").join(",");
+      const [poolRows] = await db.query<RowDataPacket[]>(
+        `SELECT p.address, p.token_base_symbol, p.token_quote_symbol,
+                p.token_base_address, p.price_usd, p.volume_24h,
+                p.price_change_24h, p.dex, p.pool_created_at,
+                p.txns_24h_buys, p.txns_24h_sells,
+                p.liquidity_usd, p.market_cap,
+                t.logo_url, t.name AS token_name
+         FROM pools p
+         LEFT JOIN tokens t ON p.token_base_address = t.address
+         WHERE p.address IN (${ph})
+         ORDER BY p.volume_24h DESC`,
+        poolAddrs
+      );
+      // Tag results with trader context
+      return poolRows.map((r) => ({
+        ...r,
+        _trader_wallet: address,
+        _trader_total_volume: totalVol,
+        _trader_trade_count: traderRows.length,
+        _trader_unique_tokens: uniqueTokens,
+        _trader_buys: buys,
+        _trader_sells: sells,
+      }));
+    }
+  }
+
+  return rows;
+}
+
+/**
+ * Look up pools by a list of token base addresses (used for fuzzy match results).
+ */
+async function searchByTokenAddresses(
+  db: DB,
+  addresses: string[]
+) {
+  if (addresses.length === 0) return [];
+  const unique = Array.from(new Set(addresses));
+  const ph = unique.map(() => "?").join(",");
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT p.address, p.token_base_symbol, p.token_quote_symbol,
+            p.token_base_address, p.price_usd, p.volume_24h,
+            p.price_change_24h, p.dex, p.pool_created_at,
+            p.txns_24h_buys, p.txns_24h_sells,
+            p.liquidity_usd, p.market_cap,
+            t.logo_url, t.name AS token_name
+     FROM pools p
+     LEFT JOIN tokens t ON p.token_base_address = t.address
+     WHERE p.token_base_address IN (${ph})
+     ORDER BY p.volume_24h DESC
+     LIMIT 20`,
+    unique
   );
   return rows;
 }
