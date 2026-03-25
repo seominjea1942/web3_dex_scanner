@@ -298,7 +298,7 @@ async function insertPools(db: mysql.Pool, pairs: DexScreenerPair[]): Promise<Po
       price_change_1h: p.priceChange?.h1 ?? 0,
       price_change_6h: p.priceChange?.h6 ?? 0,
       price_change_24h: p.priceChange?.h24 ?? 0,
-      pool_created_at: p.pairCreatedAt ?? Date.now(),
+      pool_created_at: new Date(p.pairCreatedAt ?? Date.now()),
     };
     pools.push(row);
 

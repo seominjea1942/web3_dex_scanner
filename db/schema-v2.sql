@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS tokens (
   symbol VARCHAR(32),
   decimals INT,
   logo_url VARCHAR(256),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FULLTEXT INDEX idx_tokens_name_ft (name) WITH PARSER STANDARD
 );
 
 -- Pool data (real data from DexScreener)
@@ -46,7 +47,8 @@ CREATE TABLE IF NOT EXISTS pools (
   INDEX idx_created (pool_created_at DESC),
   INDEX idx_dex (dex),
   INDEX idx_base_token (token_base_address),
-  INDEX idx_price_change (price_change_5m DESC)
+  INDEX idx_price_change (price_change_5m DESC),
+  FULLTEXT INDEX idx_pools_symbol_ft (token_base_symbol) WITH PARSER STANDARD
 );
 
 -- Pool snapshots (collected over time from DexScreener)
@@ -124,7 +126,8 @@ CREATE TABLE IF NOT EXISTS defi_events (
   description TEXT,
   INDEX idx_timestamp (timestamp DESC),
   INDEX idx_event_type (event_type, timestamp),
-  INDEX idx_severity (severity, timestamp)
+  INDEX idx_severity (severity, timestamp),
+  FULLTEXT INDEX idx_events_desc_ft (description) WITH PARSER STANDARD
 );
 
 -- Price history (3-min candles, 30 days per pool)
