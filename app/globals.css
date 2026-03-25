@@ -340,3 +340,61 @@ body {
 .banner-sparkle {
   animation: sparkle-pulse 3s ease-in-out infinite;
 }
+
+/* ── Search Badge ─────────────────────────────────────── */
+.search-badge-gradient-text {
+  background: linear-gradient(135deg, #6366F1 0%, #DB34F2 50%, #6366F1 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: banner-text-shift 6s ease-in-out infinite;
+}
+
+.search-badge-sparkle {
+  animation: sparkle-pulse 2.5s ease-in-out infinite;
+}
+
+/* Search skeleton shimmer */
+@keyframes search-skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.search-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-hover) 25%,
+    var(--bg-card) 50%,
+    var(--bg-hover) 75%
+  );
+  background-size: 200% 100%;
+  animation: search-skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* New badge for recently created pools */
+.search-new-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(48, 209, 88, 0.15);
+  color: #30D158;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Whale indicator */
+.search-whale-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: #0091FF;
+}
+
+/* Query time display */
+.search-query-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  color: var(--text-muted);
+}

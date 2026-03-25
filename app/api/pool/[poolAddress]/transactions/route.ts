@@ -1,9 +1,73 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
-import type { RowDataPacket } from "mysql2";
+import type { RowDataPacket, Pool as MysqlPool } from "mysql2/promise";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// ── Lazy transaction generation ────────────────────────────────────
+// When the newest transaction for a pool is older than STALE_SEC,
+// clone recent transactions with fresh timestamps so the demo stays live.
+const TX_STALE_SEC = 60;
+const TX_REPLAY_BATCH = 5;
+
+const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const randomBase58 = (len: number) => {
+  let s = "";
+  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+};
+
+const lazyGenerateTransactions = async (db: MysqlPool, poolAddress: string) => {
+  const [ageRows] = await db.query<RowDataPacket[]>(
+    `SELECT (UNIX_TIMESTAMP() - MAX(timestamp) / 1000) as age
+     FROM swap_transactions WHERE pool_address = ?`,
+    [poolAddress]
+  );
+  const age = Number((ageRows[0] as Record<string, unknown>)?.age ?? 0);
+  if (age < TX_STALE_SEC) return;
+
+  // Sample recent transactions from this pool as templates
+  const [templates] = await db.query<RowDataPacket[]>(
+    `SELECT side, dex, base_amount, quote_amount, usd_value
+     FROM swap_transactions WHERE pool_address = ? ORDER BY timestamp DESC LIMIT 50`,
+    [poolAddress]
+  );
+  if (templates.length === 0) return;
+
+  const nowMs = Date.now();
+  const placeholders: string[] = [];
+  const values: (string | number)[] = [];
+
+  for (let i = 0; i < TX_REPLAY_BATCH; i++) {
+    const tmpl = templates[Math.floor(Math.random() * templates.length)];
+    const wallet = randomBase58(44);
+    const sig = randomBase58(88);
+    const amountMult = 0.3 + Math.random() * 1.7;
+    const ts = nowMs - i * (3000 + Math.floor(Math.random() * 12000));
+    const side = Math.random() > 0.5 ? "buy" : "sell";
+
+    placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    values.push(
+      sig,
+      ts,
+      poolAddress,
+      tmpl.dex || "raydium",
+      side,
+      Math.round(Number(tmpl.base_amount) * amountMult * 100) / 100,
+      Math.round(Number(tmpl.quote_amount) * amountMult * 100) / 100,
+      Math.round(Number(tmpl.usd_value) * amountMult * 100) / 100,
+      wallet
+    );
+  }
+
+  await db.execute(
+    `INSERT IGNORE INTO swap_transactions
+     (signature, timestamp, pool_address, dex, side, base_amount, quote_amount, usd_value, trader_wallet)
+     VALUES ${placeholders.join(", ")}`,
+    values
+  );
+};
 
 const TIME_RANGE_MS: Record<string, number> = {
   "5m": 5 * 60 * 1000,
@@ -23,6 +87,13 @@ export async function GET(
     const { poolAddress } = await params;
     const sp = req.nextUrl.searchParams;
     const db = getPool();
+
+    // Lazy-generate fresh transactions so the demo stays live
+    try {
+      await lazyGenerateTransactions(db, poolAddress);
+    } catch (genErr) {
+      console.warn("Transaction generation skipped:", genErr);
+    }
 
     const direction = sp.get("direction") || "all"; // all | buy | sell
     const walletType = sp.get("wallet_type") || ""; // comma-sep labels
