@@ -87,10 +87,11 @@ export async function GET(req: NextRequest) {
     }
 
     // Merge & deduplicate pools by token_base_address (keep highest-volume)
-    const byToken = new Map<string, RowDataPacket>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const byToken = new Map<string, Record<string, any>>();
     for (const r of symbolRows[0]) {
       const tokenInfo = tokenMap.get(r.token_base_address);
-      const entry = {
+      const entry: Record<string, any> = {  // eslint-disable-line @typescript-eslint/no-explicit-any
         ...r,
         token_name: tokenInfo?.name ?? null,
         logo_url: tokenInfo?.logo_url ?? null,
@@ -104,7 +105,7 @@ export async function GET(req: NextRequest) {
 
     // Add tokens found via name search that weren't in symbol results
     if (tokenMap.size > 0) {
-      const tokenAddrs = [...tokenMap.keys()].filter((a) => !byToken.has(a));
+      const tokenAddrs = Array.from(tokenMap.keys()).filter((a) => !byToken.has(a));
       if (tokenAddrs.length > 0) {
         const placeholders = tokenAddrs.map(() => "?").join(",");
         const [extraPools] = await db.query<RowDataPacket[]>(
@@ -136,8 +137,8 @@ export async function GET(req: NextRequest) {
     }
 
     // Round 2: enrich tokens with safety data + whale event counts
-    const tokenAddresses = [...byToken.keys()];
-    const poolAddresses = [...byToken.values()].map((r) => r.address);
+    const tokenAddresses = Array.from(byToken.keys());
+    const poolAddresses = Array.from(byToken.values()).map((r) => r.address);
     if (tokenAddresses.length > 0) {
       const tPlaceholders = tokenAddresses.map(() => "?").join(",");
       const pPlaceholders = poolAddresses.map(() => "?").join(",");
@@ -177,7 +178,7 @@ export async function GET(req: NextRequest) {
         whaleMap.set(w.pool_address, Number(w.whale_count));
       }
 
-      for (const [addr, row] of byToken) {
+      for (const [addr, row] of Array.from(byToken.entries())) {
         const safety = safetyMap.get(addr);
         row.holder_count = safety?.holder_count ?? null;
         row.top10_holder_pct = safety?.top10_holder_pct ?? null;
@@ -192,9 +193,9 @@ export async function GET(req: NextRequest) {
     const events = (eventRows as RowDataPacket[])[0] ?? eventRows ?? [];
     const eventList = Array.isArray(events) ? events : [];
     if (eventList.length > 0) {
-      const eventPoolAddrs = [
-        ...new Set(eventList.map((e: RowDataPacket) => e.pool_address).filter(Boolean)),
-      ];
+      const eventPoolAddrs = Array.from(
+        new Set(eventList.map((e: RowDataPacket) => e.pool_address).filter(Boolean))
+      );
       if (eventPoolAddrs.length > 0) {
         const ePlaceholders = eventPoolAddrs.map(() => "?").join(",");
         const [poolSymbols] = await db.query<RowDataPacket[]>(
@@ -211,7 +212,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const tokens = [...byToken.values()]
+    const tokens = Array.from(byToken.values())
       .sort((a, b) => {
         const relDiff = b.relevance - a.relevance;
         if (Math.abs(relDiff) > 0.01) return relDiff;
