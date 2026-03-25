@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPool, withTiKV } from "@/lib/db";
+import { getPool, withTiKV, withTiFlash } from "@/lib/db";
 import {
   classifyQuery,
   getQueryEmbedding,
@@ -108,9 +108,12 @@ export async function GET(req: NextRequest) {
     let events: RowDataPacket[] = [];
     let usedVector = false;
 
-    // Filter-only queries: skip text search, just apply numeric filters to all pools
+    // Filter-only queries: use TiFlash columnar engine for analytics scans
     if (isFilterOnly) {
-      tokens = await withTiKV((conn) => searchFilterOnly(conn, filters));
+      tokens = await withTiFlash((conn) => searchFilterOnly(conn, filters)).catch(
+        // Fallback to TiKV if TiFlash unavailable
+        () => withTiKV((conn) => searchFilterOnly(conn, filters))
+      );
     } else
 
     // address/exact_symbol/prefix use TiKV (B-tree indexes) to avoid TiFlash sync issues
@@ -239,17 +242,24 @@ export async function GET(req: NextRequest) {
     // Enrich with safety + whale data (uses TiKV for reliable reads)
     tokens = await withTiKV((conn) => enrichTokens(conn, tokens));
 
-    // Sort: RRF score > relevance > volume (volume breaks ties)
+    // Sort: RRF score > relevance > popularity-boosted volume (breaks ties)
     tokens = tokens
       .sort((a, b) => {
         if (a._rrfScore && b._rrfScore) return b._rrfScore - a._rrfScore;
         const relDiff = (b.relevance || 0) - (a.relevance || 0);
         if (Math.abs(relDiff) > 0.01) return relDiff;
-        return Number(b.volume_24h || 0) - Number(a.volume_24h || 0);
+        // Blend: volume + popularity boost (popularity adds up to 30% weight)
+        const volA = Number(a.volume_24h || 0);
+        const volB = Number(b.volume_24h || 0);
+        const popA = Number(a.search_popularity || 0);
+        const popB = Number(b.search_popularity || 0);
+        const scoreA = volA + (popA * volA * 0.003); // each click adds ~0.3% boost
+        const scoreB = volB + (popB * volB * 0.003);
+        return scoreB - scoreA;
       })
       .slice(0, 10);
 
-    const searchEngine = getSearchEngineLabel(intent, usedVector);
+    const searchEngine = isFilterOnly ? "tiflash" : getSearchEngineLabel(intent, usedVector);
     const queryTimeMs = Math.round(performance.now() - start);
 
     // Extract trader info if present
@@ -702,7 +712,7 @@ async function enrichTokens(
     ? poolAddresses.map(() => "?").join(",")
     : "'__none__'";
 
-  const [safetyRows, whaleRows] = await Promise.all([
+  const [safetyRows, whaleRows, popRows] = await Promise.all([
     db
       .query<RowDataPacket[]>(
         `SELECT token_address, holder_count, top10_holder_pct
@@ -721,6 +731,13 @@ async function enrichTokens(
           poolAddresses
         )
       : Promise.resolve([[] as RowDataPacket[]]),
+    // Fetch search_popularity for ranking boost
+    db.query<RowDataPacket[]>(
+      `SELECT address, search_popularity
+       FROM tokens
+       WHERE address IN (${tPlaceholders})`,
+      tokenAddresses
+    ).catch(() => [[] as RowDataPacket[]]),
   ]);
 
   const safetyMap = new Map<string, { holder_count: number; top10_holder_pct: number }>();
@@ -740,6 +757,14 @@ async function enrichTokens(
     whaleMap.set(w.pool_address, Number(w.whale_count));
   }
 
+  // Build popularity map
+  const popMap = new Map<string, number>();
+  const popData = (popRows as RowDataPacket[])[0] ?? popRows ?? [];
+  const popList = Array.isArray(popData) ? popData : [];
+  for (const p of popList) {
+    popMap.set(p.address, Number(p.search_popularity) || 0);
+  }
+
   for (const row of tokens) {
     const addr = row.token_base_address || row.token_address;
     const safety = safetyMap.get(addr);
@@ -748,6 +773,7 @@ async function enrichTokens(
     row.txns_24h =
       (Number(row.txns_24h_buys) || 0) + (Number(row.txns_24h_sells) || 0);
     row.whale_events_24h = whaleMap.get(row.address) ?? 0;
+    row.search_popularity = popMap.get(addr) ?? 0;
   }
 
   return tokens;

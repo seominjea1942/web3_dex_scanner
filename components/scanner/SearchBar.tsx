@@ -134,6 +134,7 @@ export function SearchBar({}: SearchBarProps) {
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
+  const [analyticsSort, setAnalyticsSort] = useState<string | null>(null);
   const searchTimer = useRef<NodeJS.Timeout>();
   const containerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -179,6 +180,7 @@ export function SearchBar({}: SearchBarProps) {
         setSearchStrategy(data.search_strategy || "");
         setQueryInterpreted(data.query_interpreted);
         setFiltersApplied(data.filters_applied || []);
+        setAnalyticsSort(null); // Reset sort on new query
         setQueryTimeMs(data.query_time_ms || 0);
         setShowDropdown(true);
       } catch {
@@ -212,6 +214,14 @@ export function SearchBar({}: SearchBarProps) {
   function handleSelectPool(pool: TokenResult) {
     setShowDropdown(false);
     setLocal("");
+    // Track click for popularity ranking (fire-and-forget)
+    if (pool.token_base_address) {
+      fetch("/api/search/click", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token_address: pool.token_base_address, query: local }),
+      }).catch(() => {});
+    }
     router.push(`/pool/${pool.address}`);
   }
 
@@ -225,6 +235,26 @@ export function SearchBar({}: SearchBarProps) {
   const hasQuery = local.length >= 2;
   const hasResults = tokenResults.length > 0 || eventResults.length > 0;
   const showTrending = !hasQuery && isFocused && trending;
+
+  // Apply client-side analytics sort to token results
+  const sortedTokenResults = (() => {
+    if (!analyticsSort || tokenResults.length === 0) return tokenResults;
+    const copy = [...tokenResults];
+    switch (analyticsSort) {
+      case "gainers":
+        return copy.sort((a, b) => (b.price_change_24h || 0) - (a.price_change_24h || 0));
+      case "volume":
+        return copy.sort((a, b) => (b.volume_24h || 0) - (a.volume_24h || 0));
+      case "hot":
+        return copy.sort((a, b) => {
+          const velA = (a.volume_24h || 0) > 0 ? ((a as any).volume_1h || a.volume_24h / 24) / (a.volume_24h / 24) : 0; // eslint-disable-line @typescript-eslint/no-explicit-any
+          const velB = (b.volume_24h || 0) > 0 ? ((b as any).volume_1h || b.volume_24h / 24) / (b.volume_24h / 24) : 0; // eslint-disable-line @typescript-eslint/no-explicit-any
+          return velB - velA;
+        });
+      default:
+        return copy;
+    }
+  })();
 
   /* ── Render ──────────────────────────────────────────── */
   return (
@@ -425,15 +455,45 @@ export function SearchBar({}: SearchBarProps) {
                 <div
                   className="overflow-y-auto flex-1 min-h-0"
                 >
-                  {/* Token results */}
-                  {tokenResults.length > 0 && (
+                  {/* Token results with analytics sort chips */}
+                  {sortedTokenResults.length > 0 && (
                     <>
                       <SectionHeader
                         icon="token"
                         color="var(--accent-blue)"
-                        label={`Tokens (${tokenResults.length})`}
+                        label={`Tokens (${sortedTokenResults.length})`}
                       />
-                      {tokenResults.map((r) => (
+                      {/* Analytics sort chips */}
+                      {sortedTokenResults.length >= 3 && (
+                        <div className="px-3 py-1.5 flex gap-1.5 border-b" style={{ borderColor: "var(--border)" }}>
+                          {[
+                            { key: null, label: "Relevance", icon: "auto_awesome" },
+                            { key: "gainers", label: "Gainers", icon: "trending_up" },
+                            { key: "volume", label: "Volume", icon: "bar_chart" },
+                            { key: "hot", label: "Hot", icon: "local_fire_department" },
+                          ].map((chip) => {
+                            const active = analyticsSort === chip.key;
+                            return (
+                              <button
+                                key={chip.key ?? "relevance"}
+                                onClick={() => setAnalyticsSort(chip.key)}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-all"
+                                style={{
+                                  background: active ? "rgba(59, 130, 246, 0.15)" : "transparent",
+                                  color: active ? "var(--accent-blue)" : "var(--text-muted)",
+                                  border: `1px solid ${active ? "rgba(59, 130, 246, 0.3)" : "var(--border)"}`,
+                                }}
+                              >
+                                <span className="material-symbols-outlined" style={{ fontSize: 11 }}>
+                                  {chip.icon}
+                                </span>
+                                {chip.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {sortedTokenResults.map((r) => (
                         <TokenRow
                           key={r.address}
                           token={r}
@@ -791,6 +851,12 @@ const ENGINE_CONFIG: Record<string, { icon: string; label: string; bg: string; c
     label: "TiDB Prefix Search",
     bg: "linear-gradient(135deg, rgba(48, 209, 88, 0.08), rgba(99, 102, 241, 0.05))",
     color: "var(--accent-green)",
+  },
+  tiflash: {
+    icon: "speed",
+    label: "TiDB TiFlash Analytics",
+    bg: "linear-gradient(135deg, rgba(255, 141, 40, 0.10), rgba(255, 66, 89, 0.06))",
+    color: "var(--accent-orange)",
   },
 };
 

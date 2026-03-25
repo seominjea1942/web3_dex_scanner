@@ -412,6 +412,61 @@ export function fuzzyMatchSymbol(
     .slice(0, limit);
 }
 
+/* ── Auto-Embed New Tokens ─────────────────────────────── */
+
+/**
+ * Embed any tokens that have embedding IS NULL.
+ * Called after sync to ensure new tokens are searchable via vector.
+ * Returns count of newly embedded tokens.
+ * Gracefully returns 0 if OPENAI_API_KEY is not set.
+ */
+export async function embedNewTokens(
+  db: import("mysql2/promise").Pool
+): Promise<number> {
+  if (!process.env.OPENAI_API_KEY) return 0;
+
+  try {
+    const [rows] = await db.query<import("mysql2/promise").RowDataPacket[]>(
+      "SELECT address, name, symbol FROM tokens WHERE embedding IS NULL LIMIT 100"
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) return 0;
+
+    const openai = getOpenAI();
+    const BATCH_SIZE = 100;
+    let embedded = 0;
+
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batch = rows.slice(i, i + BATCH_SIZE);
+      const inputs = batch.map((t) => {
+        const sym = t.symbol || "";
+        const name = t.name || "";
+        return `${sym} ${name}`.trim() || t.address;
+      });
+
+      const response = await openai.embeddings.create({
+        model: EMBED_MODEL,
+        input: inputs,
+        dimensions: 1536,
+      });
+
+      for (let j = 0; j < batch.length; j++) {
+        const vecStr = `[${response.data[j].embedding.join(",")}]`;
+        await db.execute(
+          "UPDATE tokens SET embedding = ? WHERE address = ?",
+          [vecStr, batch[j].address]
+        );
+        embedded++;
+      }
+    }
+
+    return embedded;
+  } catch (err) {
+    console.warn("[search-kit] Auto-embed failed:", err);
+    return 0;
+  }
+}
+
 /* ── Search Engine Label ────────────────────────────────── */
 
 export function getSearchEngineLabel(strategy: QueryIntent, usedVector: boolean): string {
