@@ -45,9 +45,11 @@ function setCache(key: string, data: any) { // eslint-disable-line @typescript-e
 
 const STOP_WORDS = new Set([
   "find", "search", "show", "get", "tokens", "token", "coins", "coin",
-  "pools", "pool", "similar", "to", "around", "activity",
-  "whale", "whales", "this", "week", "today", "moving", "the", "a",
-  "an", "for", "with", "that", "are", "is", "in", "on", "by",
+  "pools", "pool", "similar", "to", "around",
+  "moving", "the", "a", "an", "for", "with", "that", "are", "is",
+  "in", "on", "by", "me", "what", "which", "has",
+  // NOTE: "whale", "today", "this", "week" intentionally NOT stopped
+  // — they carry search intent (whale activity, time filters)
 ]);
 
 function extractSearchTerms(query: string): string {
@@ -91,15 +93,20 @@ export async function GET(req: NextRequest) {
   // Parse natural language filters from query: "dog coins under $1" → search "dog coins" + filter price ≤ $1
   const parsed = parseQueryFilters(q);
   const filters = parsed.filters;
+  const dexFilter = parsed.dex;
+  const sortDirective = parsed.sortDirective;
+  const timeFilterHours = parsed.timeFilterHours;
+  const timeLabel = parsed.timeLabel;
   const effectiveQuery = parsed.searchText || q;
 
   const searchTerms = extractSearchTerms(effectiveQuery);
   const queryInterpreted =
     searchTerms !== effectiveQuery.toLowerCase() ? searchTerms : undefined;
 
-  // If after stop word removal we have no meaningful search text but have filters, do a filter-only query
+  // If after stop word removal we have no meaningful search text but have filters/sort/time, do a filter-only query
   const allStopWords = effectiveQuery.toLowerCase().split(/\s+/).every((w) => STOP_WORDS.has(w) || w.length < 2);
-  const isFilterOnly = filters.length > 0 && allStopWords;
+  const hasStructuredFilters = filters.length > 0 || sortDirective || timeFilterHours !== null || dexFilter;
+  const isFilterOnly = hasStructuredFilters && allStopWords;
 
   const intent: QueryIntent = isFilterOnly ? "fts" : classifyQuery(effectiveQuery);
 
@@ -109,10 +116,11 @@ export async function GET(req: NextRequest) {
     let usedVector = false;
 
     // Filter-only queries: use TiFlash columnar engine for analytics scans
+    const filterOpts = { dex: dexFilter, timeFilterHours, sortDirective };
     if (isFilterOnly) {
-      tokens = await withTiFlash((conn) => searchFilterOnly(conn, filters)).catch(
+      tokens = await withTiFlash((conn) => searchFilterOnly(conn, filters, filterOpts)).catch(
         // Fallback to TiKV if TiFlash unavailable
-        () => withTiKV((conn) => searchFilterOnly(conn, filters))
+        () => withTiKV((conn) => searchFilterOnly(conn, filters, filterOpts))
       );
     } else
 
@@ -239,6 +247,42 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Apply DEX filter (in-memory for non-filter-only queries)
+    if (dexFilter && !isFilterOnly) {
+      const dexLower = dexFilter.toLowerCase();
+      tokens = tokens.filter((t) => (t.dex || "").toLowerCase() === dexLower);
+    }
+
+    // Apply time filter (in-memory for non-filter-only queries)
+    if (timeFilterHours !== null && !isFilterOnly) {
+      const nowMs = Date.now();
+      if (timeFilterHours > 0) {
+        // "last N hours" — created within
+        const thresholdMs = nowMs - timeFilterHours * 3600 * 1000;
+        tokens = tokens.filter((t) => {
+          const ts = t.pool_created_at ? new Date(t.pool_created_at).getTime() : 0;
+          return ts >= thresholdMs;
+        });
+      } else if (timeFilterHours < 0) {
+        // "older than N hours"
+        const thresholdMs = nowMs - Math.abs(timeFilterHours) * 3600 * 1000;
+        tokens = tokens.filter((t) => {
+          const ts = t.pool_created_at ? new Date(t.pool_created_at).getTime() : 0;
+          return ts > 0 && ts < thresholdMs;
+        });
+      }
+    }
+
+    // Apply sort directive (in-memory for non-filter-only queries)
+    if (sortDirective && !isFilterOnly) {
+      const { field, order } = sortDirective;
+      tokens.sort((a, b) => {
+        const va = Number(a[field] ?? 0);
+        const vb = Number(b[field] ?? 0);
+        return order === "DESC" ? vb - va : va - vb;
+      });
+    }
+
     // Enrich with safety + whale data (uses TiKV for reliable reads)
     tokens = await withTiKV((conn) => enrichTokens(conn, tokens));
 
@@ -274,6 +318,13 @@ export async function GET(req: NextRequest) {
         }
       : undefined;
 
+    const allLabels = [
+      ...filters.map((f) => f.label),
+      ...(dexFilter ? [`dex: ${dexFilter}`] : []),
+      ...(timeLabel ? [timeLabel] : []),
+      ...(sortDirective ? [`sort: ${sortDirective.field} ${sortDirective.order}`] : []),
+    ];
+
     const response = {
       tokens,
       events,
@@ -281,7 +332,7 @@ export async function GET(req: NextRequest) {
       search_engine: searchEngine,
       search_strategy: intent,
       query_interpreted: queryInterpreted,
-      filters_applied: filters.map((f) => f.label),
+      filters_applied: allLabels,
       query_time_ms: queryTimeMs,
     };
 
@@ -299,9 +350,52 @@ export async function GET(req: NextRequest) {
 
 async function searchFilterOnly(
   db: DB,
-  filters: SearchFilter[]
+  filters: SearchFilter[],
+  opts?: {
+    dex?: string | null;
+    timeFilterHours?: number | null;
+    sortDirective?: { field: string; order: "DESC" | "ASC" } | null;
+  }
 ) {
   const { where, params } = buildFilterSQL(filters);
+  const allParams: (string | number)[] = [...params];
+  let extraWhere = "";
+
+  // DEX filter
+  if (opts?.dex) {
+    extraWhere += " AND LOWER(p.dex) = ?";
+    allParams.push(opts.dex.toLowerCase());
+  }
+
+  // Time filter
+  if (opts?.timeFilterHours && opts.timeFilterHours > 0) {
+    // Positive = "created within last N hours"
+    const thresholdMs = Date.now() - opts.timeFilterHours * 3600 * 1000;
+    extraWhere += " AND p.pool_created_at >= ?";
+    allParams.push(new Date(thresholdMs).toISOString().slice(0, 19).replace("T", " "));
+  } else if (opts?.timeFilterHours && opts.timeFilterHours < 0) {
+    // Negative = "older than N hours"
+    const hours = Math.abs(opts.timeFilterHours);
+    const thresholdMs = Date.now() - hours * 3600 * 1000;
+    extraWhere += " AND p.pool_created_at < ?";
+    allParams.push(new Date(thresholdMs).toISOString().slice(0, 19).replace("T", " "));
+  }
+
+  // Sort directive
+  const sortCol = opts?.sortDirective?.field || "volume_24h";
+  const sortOrder = opts?.sortDirective?.order || "DESC";
+  // Map field names to SQL columns
+  const sortMap: Record<string, string> = {
+    price_change_24h: "p.price_change_24h",
+    volume_24h: "p.volume_24h",
+    market_cap: "p.market_cap",
+    price_usd: "p.price_usd",
+    liquidity_usd: "p.liquidity_usd",
+    holder_count: "COALESCE(ts.holder_count, 0)",
+  };
+  const sqlSort = sortMap[sortCol] || `p.${sortCol}`;
+  const needsHolderJoin = sortCol === "holder_count";
+
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT p.address, p.token_base_symbol, p.token_quote_symbol,
             p.token_base_address, p.price_usd, p.volume_24h,
@@ -309,12 +403,14 @@ async function searchFilterOnly(
             p.txns_24h_buys, p.txns_24h_sells,
             p.liquidity_usd, p.market_cap,
             t.logo_url, t.name AS token_name
+            ${needsHolderJoin ? ", COALESCE(ts.holder_count, 0) AS holder_count" : ""}
      FROM pools p
      LEFT JOIN tokens t ON p.token_base_address = t.address
-     WHERE 1=1 ${where}
-     ORDER BY p.volume_24h DESC
+     ${needsHolderJoin ? "LEFT JOIN token_safety ts ON ts.token_address = p.token_base_address" : ""}
+     WHERE 1=1 ${where} ${extraWhere}
+     ORDER BY ${sqlSort} ${sortOrder}
      LIMIT 50`,
-    params
+    allParams
   );
   return rows;
 }
@@ -442,7 +538,8 @@ async function searchExactSymbol(
   db: DB,
   symbol: string
 ) {
-  const upper = symbol.toUpperCase();
+  // Handle pair notation: "JUP/USDC" → search for "JUP"
+  const upper = symbol.includes("/") ? symbol.split("/")[0].toUpperCase() : symbol.toUpperCase();
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT p.address, p.token_base_symbol, p.token_quote_symbol,
             p.token_base_address, p.price_usd, p.volume_24h,

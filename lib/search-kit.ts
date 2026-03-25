@@ -17,7 +17,37 @@ const SEMANTIC_TRIGGERS = new Set([
   "similar", "like", "related", "category", "type",
   "meme", "memes", "dog", "cat", "ai", "gaming", "defi",
   "nft", "metaverse", "social", "infrastructure",
+  "rwa", "depin", "celebrity", "food", "anime", "frog",
 ]);
+
+/* ── Known DEX names ─────────────────────────────────────── */
+const KNOWN_DEXES = new Set([
+  "raydium", "orca", "meteora", "jupiter", "lifinity",
+  "openbook", "serum", "aldrin", "saber", "marinade",
+  "phoenix", "launchlab",
+]);
+
+/* ── Trending / Sort trigger words ────────────────────────── */
+const SORT_TRIGGERS: Record<string, { field: string; order: "DESC" | "ASC" }> = {
+  "top gainers": { field: "price_change_24h", order: "DESC" },
+  "biggest gainers": { field: "price_change_24h", order: "DESC" },
+  "top losers": { field: "price_change_24h", order: "ASC" },
+  "biggest losers": { field: "price_change_24h", order: "ASC" },
+  "highest volume": { field: "volume_24h", order: "DESC" },
+  "top volume": { field: "volume_24h", order: "DESC" },
+  "most traded": { field: "volume_24h", order: "DESC" },
+  "lowest mcap": { field: "market_cap", order: "ASC" },
+  "lowest market cap": { field: "market_cap", order: "ASC" },
+  "highest mcap": { field: "market_cap", order: "DESC" },
+  "most holders": { field: "holder_count", order: "DESC" },
+  "cheapest": { field: "price_usd", order: "ASC" },
+  "trending": { field: "volume_24h", order: "DESC" },
+  "hot": { field: "volume_24h", order: "DESC" },
+  "what's hot": { field: "volume_24h", order: "DESC" },
+  "whats hot": { field: "volume_24h", order: "DESC" },
+  "pumping": { field: "price_change_24h", order: "DESC" },
+  "dumping": { field: "price_change_24h", order: "ASC" },
+};
 
 // Base58 character set (Solana addresses)
 const BASE58_RE = /^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}$/;
@@ -28,6 +58,11 @@ export function classifyQuery(query: string): QueryIntent {
   // Address: base58, 32-44 chars
   if (BASE58_RE.test(trimmed)) {
     return "address";
+  }
+
+  // Pair notation: "JUP/USDC" → treat as exact_symbol for the base token
+  if (/^[A-Za-z]+\/[A-Za-z]+$/.test(trimmed)) {
+    return "exact_symbol";
   }
 
   const words = trimmed.toLowerCase().split(/\s+/).filter(Boolean);
@@ -185,6 +220,10 @@ export async function getQueryEmbedding(
 export interface ParsedQuery {
   searchText: string;        // The text part to search (without filter expressions)
   filters: SearchFilter[];   // Extracted numeric filters
+  dex: string | null;        // Extracted DEX name (e.g., "raydium")
+  sortDirective: { field: string; order: "DESC" | "ASC" } | null; // e.g., "top gainers"
+  timeFilterHours: number | null; // e.g., 24 for "today", 1 for "last hour", -720 for "older than 30 days"
+  timeLabel: string;         // Human-readable: "today", "last 1h", etc.
 }
 
 export interface SearchFilter {
@@ -194,20 +233,46 @@ export interface SearchFilter {
   label: string;             // Human-readable: "price < $1"
 }
 
-// Pattern: "under $1", "below $0.01", "less than $50K"
-const UNDER_PRICE_RE = /\b(?:under|below|less\s+than|cheaper\s+than|<)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
-// Pattern: "over $1", "above $100", "more than $50K", "> $1M"
-const OVER_PRICE_RE = /\b(?:over|above|more\s+than|greater\s+than|>)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
-// Pattern: "up 30%", "gained 50%", "+20%"
-const UP_PCT_RE = /\b(?:up|gained|gaining|pumping|pumped|\+)\s*([\d.]+)\s*%/i;
+// ── Percentage patterns (must be checked BEFORE generic over/under to avoid "over 50%" → price)
+// Pattern: "up 30%", "gained 50%", "+20%", "over 50%" (when followed by %)
+const UP_PCT_RE = /\b(?:up|gained|gaining|pumping|pumped|over|above|\+)\s*([\d.]+)\s*%/i;
 // Pattern: "down 30%", "dropped 50%", "-20%"
 const DOWN_PCT_RE = /\b(?:down|dropped|dropping|dumping|dumped|-)\s*([\d.]+)\s*%/i;
-// Pattern: "volume > $50K", "vol over $1M"
-const VOLUME_RE = /\b(?:vol(?:ume)?)\s*(?:>|over|above)?\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
-// Pattern: "liquidity > $50K", "liq over $100K"
-const LIQUIDITY_RE = /\b(?:liq(?:uidity)?)\s*(?:>|over|above)?\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
-// Pattern: "mcap > $1M", "market cap over $10M"
-const MCAP_RE = /\b(?:mcap|market\s*cap)\s*(?:>|over|above)?\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+
+// ── Volume: "volume > $50K", "vol over $1M", "volume under $10K"
+const VOLUME_OVER_RE = /\b(?:vol(?:ume)?)\s*(?:>|over|above)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+const VOLUME_UNDER_RE = /\b(?:vol(?:ume)?)\s*(?:<|under|below)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+const VOLUME_BARE_RE = /\b(?:vol(?:ume)?)\s+\$?([\d,.]+)\s*(k|m|b)?\b/i; // "volume 1M" (no operator, assume >=)
+
+// ── Liquidity: "liquidity > $50K", "liq under $100K"
+const LIQ_OVER_RE = /\b(?:liq(?:uidity)?)\s*(?:>|over|above)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+const LIQ_UNDER_RE = /\b(?:liq(?:uidity)?)\s*(?:<|under|below)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+
+// ── Market cap: "mcap > $1M", "mcap under 100k", "market cap below $500K"
+const MCAP_OVER_RE = /\b(?:mcap|market\s*cap)\s*(?:>|over|above)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+const MCAP_UNDER_RE = /\b(?:mcap|market\s*cap)\s*(?:<|under|below)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+const MCAP_BARE_RE = /\b(?:mcap|market\s*cap)\s+\$?([\d,.]+)\s*(k|m|b)?\b/i; // "mcap 100k" (assume >=)
+
+// ── Price: "under $1", "below $0.01", "over $100", "sub penny" (fallback — checked LAST)
+const UNDER_PRICE_RE = /\b(?:under|below|less\s+than|cheaper\s+than|<)\s*\$?([\d,.]+)\s*(k|m|b|cent|cents|penny)?\b/i;
+const OVER_PRICE_RE = /\b(?:over|above|more\s+than|greater\s+than|>)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+const SUB_PENNY_RE = /\bsub[\s-]?penn(?:y|ies)\b/i;
+
+// ── Time/age: "last hour", "today", "this week", "new", "launched today"
+const TIME_FILTERS: { re: RegExp; hours: number; label: string }[] = [
+  { re: /\b(?:last|past)\s*(\d+)\s*min(?:ute)?s?\b/i, hours: -1, label: "" }, // special: use group
+  { re: /\b(?:last|past)\s*(\d+)\s*hours?\b/i, hours: -1, label: "" },       // special: use group
+  { re: /\b(?:last|past)\s*5\s*min/i, hours: 5 / 60, label: "last 5m" },
+  { re: /\b(?:last|past)\s*(?:1\s*)?hour\b/i, hours: 1, label: "last 1h" },
+  { re: /\b(?:launched|created|listed|new)\s*today\b/i, hours: 24, label: "today" },
+  { re: /\btoday\b/i, hours: 24, label: "today" },
+  { re: /\b(?:this|last|past)\s*week\b/i, hours: 168, label: "this week" },
+  { re: /\b(?:last|past)\s*24\s*h(?:ours?)?\b/i, hours: 24, label: "24h" },
+  { re: /\bnew(?:est|ly)?\s+(?:tokens?|pairs?|pools?|launches?|listed)\b/i, hours: 24, label: "new (24h)" },
+  { re: /\b(?:just|recently)\s+(?:launched|listed|created)\b/i, hours: 1, label: "just launched" },
+  { re: /\b(?:fresh)\s+(?:pools?|pairs?|tokens?)\b/i, hours: 6, label: "fresh (6h)" },
+  { re: /\bolder\s+than\s+(\d+)\s*days?\b/i, hours: -2, label: "" }, // special: negative = older than
+];
 
 function parseMultiplier(suffix: string | undefined): number {
   if (!suffix) return 1;
@@ -215,6 +280,8 @@ function parseMultiplier(suffix: string | undefined): number {
     case "k": return 1_000;
     case "m": return 1_000_000;
     case "b": return 1_000_000_000;
+    case "cent": case "cents": return 0.01;
+    case "penny": return 0.01;
     default: return 1;
   }
 }
@@ -227,48 +294,54 @@ function parseNum(raw: string, suffix?: string): number {
 export function parseQueryFilters(query: string): ParsedQuery {
   const filters: SearchFilter[] = [];
   let text = query;
+  let dex: string | null = null;
+  let sortDirective: { field: string; order: "DESC" | "ASC" } | null = null;
+  let timeFilterHours: number | null = null;
+  let timeLabel = "";
 
-  // Extract volume BEFORE price (so "volume over $10K" doesn't match as price)
-  const volMatch = text.match(VOLUME_RE);
-  if (volMatch) {
-    const val = parseNum(volMatch[1], volMatch[2]);
-    filters.push({ field: "volume_24h", op: ">=", value: val, label: `vol ≥ $${volMatch[1]}${volMatch[2] || ""}` });
-    text = text.replace(VOLUME_RE, " ");
+  // ── 0. Extract DEX name ──
+  const lowerText = text.toLowerCase();
+  for (const dexName of Array.from(KNOWN_DEXES)) {
+    if (lowerText.includes(dexName)) {
+      dex = dexName;
+      text = text.replace(new RegExp(`\\b${dexName}\\b`, "gi"), " ");
+      break;
+    }
   }
 
-  // Extract liquidity BEFORE price
-  const liqMatch = text.match(LIQUIDITY_RE);
-  if (liqMatch) {
-    const val = parseNum(liqMatch[1], liqMatch[2]);
-    filters.push({ field: "liquidity_usd", op: ">=", value: val, label: `liq ≥ $${liqMatch[1]}${liqMatch[2] || ""}` });
-    text = text.replace(LIQUIDITY_RE, " ");
+  // ── 0b. Extract sort directives (check multi-word first) ──
+  const lowerText2 = text.toLowerCase();
+  for (const [trigger, directive] of Object.entries(SORT_TRIGGERS).sort((a, b) => b[0].length - a[0].length)) {
+    if (lowerText2.includes(trigger)) {
+      sortDirective = directive;
+      text = text.replace(new RegExp(trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "gi"), " ");
+      break;
+    }
   }
 
-  // Extract market cap BEFORE price
-  const mcapMatch = text.match(MCAP_RE);
-  if (mcapMatch) {
-    const val = parseNum(mcapMatch[1], mcapMatch[2]);
-    filters.push({ field: "market_cap", op: ">=", value: val, label: `mcap ≥ $${mcapMatch[1]}${mcapMatch[2] || ""}` });
-    text = text.replace(MCAP_RE, " ");
+  // ── 0c. Extract time/age filter ──
+  for (const tf of TIME_FILTERS) {
+    const m = text.match(tf.re);
+    if (m) {
+      if (tf.hours === -1 && m[1]) {
+        // Dynamic: "last N minutes/hours"
+        const n = parseInt(m[1], 10);
+        timeFilterHours = tf.re.source.includes("min") ? n / 60 : n;
+        timeLabel = `last ${m[1]}${tf.re.source.includes("min") ? "m" : "h"}`;
+      } else if (tf.hours === -2 && m[1]) {
+        // "older than N days" — negative means we want pool_created_at < threshold
+        timeFilterHours = -(parseInt(m[1], 10) * 24);
+        timeLabel = `older than ${m[1]}d`;
+      } else {
+        timeFilterHours = tf.hours;
+        timeLabel = tf.label;
+      }
+      text = text.replace(tf.re, " ");
+      break;
+    }
   }
 
-  // Extract price < X (after volume/liq/mcap to avoid conflicts)
-  const underMatch = text.match(UNDER_PRICE_RE);
-  if (underMatch) {
-    const val = parseNum(underMatch[1], underMatch[2]);
-    filters.push({ field: "price_usd", op: "<=", value: val, label: `price ≤ $${underMatch[1]}${underMatch[2] || ""}` });
-    text = text.replace(UNDER_PRICE_RE, " ");
-  }
-
-  // Extract price > X
-  const overMatch = text.match(OVER_PRICE_RE);
-  if (overMatch) {
-    const val = parseNum(overMatch[1], overMatch[2]);
-    filters.push({ field: "price_usd", op: ">=", value: val, label: `price ≥ $${overMatch[1]}${overMatch[2] || ""}` });
-    text = text.replace(OVER_PRICE_RE, " ");
-  }
-
-  // Extract % up
+  // ── 1. Extract percentage changes FIRST (before over/under which would steal "over 50%") ──
   const upMatch = text.match(UP_PCT_RE);
   if (upMatch) {
     const val = parseFloat(upMatch[1]);
@@ -276,7 +349,6 @@ export function parseQueryFilters(query: string): ParsedQuery {
     text = text.replace(UP_PCT_RE, " ");
   }
 
-  // Extract % down
   const downMatch = text.match(DOWN_PCT_RE);
   if (downMatch) {
     const val = parseFloat(downMatch[1]);
@@ -284,10 +356,81 @@ export function parseQueryFilters(query: string): ParsedQuery {
     text = text.replace(DOWN_PCT_RE, " ");
   }
 
+  // ── 2. Volume (before generic price) ──
+  const volOverMatch = text.match(VOLUME_OVER_RE);
+  if (volOverMatch) {
+    filters.push({ field: "volume_24h", op: ">=", value: parseNum(volOverMatch[1], volOverMatch[2]), label: `vol ≥ $${volOverMatch[1]}${volOverMatch[2] || ""}` });
+    text = text.replace(VOLUME_OVER_RE, " ");
+  }
+  const volUnderMatch = text.match(VOLUME_UNDER_RE);
+  if (volUnderMatch) {
+    filters.push({ field: "volume_24h", op: "<=", value: parseNum(volUnderMatch[1], volUnderMatch[2]), label: `vol ≤ $${volUnderMatch[1]}${volUnderMatch[2] || ""}` });
+    text = text.replace(VOLUME_UNDER_RE, " ");
+  }
+  if (!volOverMatch && !volUnderMatch) {
+    const volBareMatch = text.match(VOLUME_BARE_RE);
+    if (volBareMatch) {
+      filters.push({ field: "volume_24h", op: ">=", value: parseNum(volBareMatch[1], volBareMatch[2]), label: `vol ≥ $${volBareMatch[1]}${volBareMatch[2] || ""}` });
+      text = text.replace(VOLUME_BARE_RE, " ");
+    }
+  }
+
+  // ── 3. Liquidity (before generic price) ──
+  const liqOverMatch = text.match(LIQ_OVER_RE);
+  if (liqOverMatch) {
+    filters.push({ field: "liquidity_usd", op: ">=", value: parseNum(liqOverMatch[1], liqOverMatch[2]), label: `liq ≥ $${liqOverMatch[1]}${liqOverMatch[2] || ""}` });
+    text = text.replace(LIQ_OVER_RE, " ");
+  }
+  const liqUnderMatch = text.match(LIQ_UNDER_RE);
+  if (liqUnderMatch) {
+    filters.push({ field: "liquidity_usd", op: "<=", value: parseNum(liqUnderMatch[1], liqUnderMatch[2]), label: `liq ≤ $${liqUnderMatch[1]}${liqUnderMatch[2] || ""}` });
+    text = text.replace(LIQ_UNDER_RE, " ");
+  }
+
+  // ── 4. Market cap (both directions — FIX for "mcap under X") ──
+  const mcapOverMatch = text.match(MCAP_OVER_RE);
+  if (mcapOverMatch) {
+    filters.push({ field: "market_cap", op: ">=", value: parseNum(mcapOverMatch[1], mcapOverMatch[2]), label: `mcap ≥ $${mcapOverMatch[1]}${mcapOverMatch[2] || ""}` });
+    text = text.replace(MCAP_OVER_RE, " ");
+  }
+  const mcapUnderMatch = text.match(MCAP_UNDER_RE);
+  if (mcapUnderMatch) {
+    filters.push({ field: "market_cap", op: "<=", value: parseNum(mcapUnderMatch[1], mcapUnderMatch[2]), label: `mcap ≤ $${mcapUnderMatch[1]}${mcapUnderMatch[2] || ""}` });
+    text = text.replace(MCAP_UNDER_RE, " ");
+  }
+  if (!mcapOverMatch && !mcapUnderMatch) {
+    const mcapBareMatch = text.match(MCAP_BARE_RE);
+    if (mcapBareMatch) {
+      filters.push({ field: "market_cap", op: ">=", value: parseNum(mcapBareMatch[1], mcapBareMatch[2]), label: `mcap ≥ $${mcapBareMatch[1]}${mcapBareMatch[2] || ""}` });
+      text = text.replace(MCAP_BARE_RE, " ");
+    }
+  }
+
+  // ── 5. "sub penny" idiom ──
+  if (SUB_PENNY_RE.test(text)) {
+    filters.push({ field: "price_usd", op: "<=", value: 0.01, label: "price ≤ $0.01" });
+    text = text.replace(SUB_PENNY_RE, " ");
+  }
+
+  // ── 6. Generic price under/over (LAST — everything else already extracted) ──
+  const underMatch = text.match(UNDER_PRICE_RE);
+  if (underMatch) {
+    const val = parseNum(underMatch[1], underMatch[2]);
+    filters.push({ field: "price_usd", op: "<=", value: val, label: `price ≤ $${val}` });
+    text = text.replace(UNDER_PRICE_RE, " ");
+  }
+
+  const overMatch = text.match(OVER_PRICE_RE);
+  if (overMatch) {
+    const val = parseNum(overMatch[1], overMatch[2]);
+    filters.push({ field: "price_usd", op: ">=", value: val, label: `price ≥ $${val}` });
+    text = text.replace(OVER_PRICE_RE, " ");
+  }
+
   // Clean up remaining text
   const searchText = text.replace(/\s+/g, " ").trim();
 
-  return { searchText, filters };
+  return { searchText, filters, dex, sortDirective, timeFilterHours, timeLabel };
 }
 
 /**
