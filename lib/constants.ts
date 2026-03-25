@@ -36,6 +36,27 @@ export const EVENT_TYPE_CONFIG = {
     color: "#DB34F2",
     bgColor: "rgba(219, 52, 242, 0.15)",
   },
+  liquidity_add: {
+    label: "Liquidity",
+    icon: "water_drop",
+    img: "/icons/liquidity.png",
+    color: "#DB34F2",
+    bgColor: "rgba(219, 52, 242, 0.15)",
+  },
+  liquidity_remove: {
+    label: "Liquidity",
+    icon: "water_drop",
+    img: "/icons/liquidity.png",
+    color: "#DB34F2",
+    bgColor: "rgba(219, 52, 242, 0.15)",
+  },
+  large_trade: {
+    label: "Swap",
+    icon: "swap_horiz",
+    img: "/icons/swap.png",
+    color: "#888888",
+    bgColor: "rgba(136, 136, 136, 0.15)",
+  },
   smart_money: {
     label: "Smart Money",
     icon: "diamond",
