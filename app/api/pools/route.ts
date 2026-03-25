@@ -5,10 +5,28 @@ import type { RowDataPacket } from "mysql2";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Lazy pool sync: trigger /api/sync/pools when data is stale (>5 min)
+const lazySyncPools = async (req: NextRequest) => {
+  try {
+    const origin = req.nextUrl.origin;
+    const res = await fetch(`${origin}/api/sync/pools`, {
+      method: "GET",
+      headers: { "x-internal": "1" },
+    });
+    if (!res.ok) console.warn("Pool sync returned", res.status);
+  } catch (err) {
+    console.warn("Pool sync skipped:", err);
+  }
+};
+
 export async function GET(req: NextRequest) {
   try {
     const db = getPool();
     const params = req.nextUrl.searchParams;
+
+    // Fire-and-forget: sync pools from DexScreener if stale (>5 min)
+    // Don't await — let it run in background while we serve cached data
+    lazySyncPools(req).catch(() => {});
 
     const sort = params.get("sort") || "volume_24h";
     const order = params.get("order") === "asc" ? "ASC" : "DESC";
