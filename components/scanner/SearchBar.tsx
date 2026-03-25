@@ -50,8 +50,9 @@ interface SearchBarProps {
 
 const PLACEHOLDER_HINTS = [
   "Search tokens, pools, or addresses...",
-  'Try "dog tokens" or "meme coins"...',
-  'Try "BONK" or "whale activity"...',
+  'Try "dog coins under $1"...',
+  'Try "meme tokens" or "BONK"...',
+  'Try "tokens up 30%" or "defi"...',
   "Paste a token address to find it...",
 ];
 
@@ -128,6 +129,7 @@ export function SearchBar({}: SearchBarProps) {
   const [searchEngine, setSearchEngine] = useState("");
   const [searchStrategy, setSearchStrategy] = useState("");
   const [queryInterpreted, setQueryInterpreted] = useState<string | undefined>();
+  const [filtersApplied, setFiltersApplied] = useState<string[]>([]);
   const [queryTimeMs, setQueryTimeMs] = useState(0);
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -176,6 +178,7 @@ export function SearchBar({}: SearchBarProps) {
         setSearchEngine(data.search_engine || "");
         setSearchStrategy(data.search_strategy || "");
         setQueryInterpreted(data.query_interpreted);
+        setFiltersApplied(data.filters_applied || []);
         setQueryTimeMs(data.query_time_ms || 0);
         setShowDropdown(true);
       } catch {
@@ -366,6 +369,33 @@ export function SearchBar({}: SearchBarProps) {
                     </strong>
                   </div>
                 )}
+
+              {/* Active filters */}
+              {filtersApplied.length > 0 && (
+                <div
+                  className="px-4 py-2 border-b flex items-center gap-1.5 flex-wrap"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <span
+                    className="material-symbols-outlined"
+                    style={{ fontSize: 13, color: "var(--accent-orange)" }}
+                  >
+                    filter_alt
+                  </span>
+                  {filtersApplied.map((f, i) => (
+                    <span
+                      key={i}
+                      className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                      style={{
+                        background: "rgba(255, 141, 40, 0.12)",
+                        color: "var(--accent-orange)",
+                      }}
+                    >
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {/* Loading skeleton */}
               {loading && !hasResults ? (

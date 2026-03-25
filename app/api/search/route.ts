@@ -5,8 +5,12 @@ import {
   getQueryEmbedding,
   rrfMerge,
   getSearchEngineLabel,
+  parseQueryFilters,
+  buildFilterSQL,
+  deduplicateByToken,
   type QueryIntent,
   type RankedResult,
+  type SearchFilter,
 } from "@/lib/search-kit";
 import type { RowDataPacket, Pool, PoolConnection } from "mysql2/promise";
 
@@ -42,16 +46,31 @@ export async function GET(req: NextRequest) {
 
   const db = getPool();
   const start = performance.now();
-  const searchTerms = extractSearchTerms(q);
-  const queryInterpreted =
-    searchTerms !== q.toLowerCase() ? searchTerms : undefined;
 
-  const intent: QueryIntent = classifyQuery(q);
+  // Parse natural language filters from query: "dog coins under $1" → search "dog coins" + filter price ≤ $1
+  const parsed = parseQueryFilters(q);
+  const filters = parsed.filters;
+  const effectiveQuery = parsed.searchText || q;
+
+  const searchTerms = extractSearchTerms(effectiveQuery);
+  const queryInterpreted =
+    searchTerms !== effectiveQuery.toLowerCase() ? searchTerms : undefined;
+
+  // If after stop word removal we have no meaningful search text but have filters, do a filter-only query
+  const allStopWords = effectiveQuery.toLowerCase().split(/\s+/).every((w) => STOP_WORDS.has(w) || w.length < 2);
+  const isFilterOnly = filters.length > 0 && allStopWords;
+
+  const intent: QueryIntent = isFilterOnly ? "fts" : classifyQuery(effectiveQuery);
 
   try {
     let tokens: Record<string, any>[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
     let events: RowDataPacket[] = [];
     let usedVector = false;
+
+    // Filter-only queries: skip text search, just apply numeric filters to all pools
+    if (isFilterOnly) {
+      tokens = await withTiKV((conn) => searchFilterOnly(conn, filters));
+    } else
 
     // address/exact_symbol/prefix use TiKV (B-tree indexes) to avoid TiFlash sync issues
     // fts/semantic/hybrid use pool directly (FTS + Vector both need TiFlash)
@@ -133,10 +152,31 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Deduplicate: keep only the best pool per unique token
+    tokens = deduplicateByToken(tokens);
+
+    // Apply parsed numeric filters (e.g., "under $1" → price_usd <= 1)
+    if (filters.length > 0) {
+      tokens = tokens.filter((t) =>
+        filters.every((f) => {
+          const val = Number(t[f.field]);
+          if (isNaN(val)) return false;
+          switch (f.op) {
+            case ">=": return val >= f.value;
+            case "<=": return val <= f.value;
+            case ">": return val > f.value;
+            case "<": return val < f.value;
+            case "=": return val === f.value;
+            default: return true;
+          }
+        })
+      );
+    }
+
     // Enrich with safety + whale data (uses TiKV for reliable reads)
     tokens = await withTiKV((conn) => enrichTokens(conn, tokens));
 
-    // Sort and limit
+    // Sort: RRF score > relevance > volume (volume breaks ties)
     tokens = tokens
       .sort((a, b) => {
         if (a._rrfScore && b._rrfScore) return b._rrfScore - a._rrfScore;
@@ -155,6 +195,7 @@ export async function GET(req: NextRequest) {
       search_engine: searchEngine,
       search_strategy: intent,
       query_interpreted: queryInterpreted,
+      filters_applied: filters.map((f) => f.label),
       query_time_ms: queryTimeMs,
     });
   } catch (err) {
@@ -165,6 +206,28 @@ export async function GET(req: NextRequest) {
 
 /* ── Search Strategies ───────────────────────────────────── */
 
+async function searchFilterOnly(
+  db: DB,
+  filters: SearchFilter[]
+) {
+  const { where, params } = buildFilterSQL(filters);
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT p.address, p.token_base_symbol, p.token_quote_symbol,
+            p.token_base_address, p.price_usd, p.volume_24h,
+            p.price_change_24h, p.dex, p.pool_created_at,
+            p.txns_24h_buys, p.txns_24h_sells,
+            p.liquidity_usd, p.market_cap,
+            t.logo_url, t.name AS token_name
+     FROM pools p
+     LEFT JOIN tokens t ON p.token_base_address = t.address
+     WHERE 1=1 ${where}
+     ORDER BY p.volume_24h DESC
+     LIMIT 50`,
+    params
+  );
+  return rows;
+}
+
 async function searchByAddress(
   db: DB,
   address: string
@@ -174,6 +237,7 @@ async function searchByAddress(
             p.token_base_address, p.price_usd, p.volume_24h,
             p.price_change_24h, p.dex, p.pool_created_at,
             p.txns_24h_buys, p.txns_24h_sells,
+            p.liquidity_usd, p.market_cap,
             t.logo_url, t.name AS token_name
      FROM pools p
      LEFT JOIN tokens t ON p.token_base_address = t.address
@@ -195,6 +259,7 @@ async function searchExactSymbol(
             p.token_base_address, p.price_usd, p.volume_24h,
             p.price_change_24h, p.dex, p.pool_created_at,
             p.txns_24h_buys, p.txns_24h_sells,
+            p.liquidity_usd, p.market_cap,
             t.logo_url, t.name AS token_name
      FROM pools p
      LEFT JOIN tokens t ON p.token_base_address = t.address
@@ -216,6 +281,7 @@ async function searchPrefix(
             p.token_base_address, p.price_usd, p.volume_24h,
             p.price_change_24h, p.dex, p.pool_created_at,
             p.txns_24h_buys, p.txns_24h_sells,
+            p.liquidity_usd, p.market_cap,
             t.logo_url, t.name AS token_name
      FROM pools p
      LEFT JOIN tokens t ON p.token_base_address = t.address

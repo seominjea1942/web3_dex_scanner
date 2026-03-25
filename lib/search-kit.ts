@@ -180,6 +180,170 @@ export async function getQueryEmbedding(
   }
 }
 
+/* ── Natural Language Filter Extraction ──────────────────── */
+
+export interface ParsedQuery {
+  searchText: string;        // The text part to search (without filter expressions)
+  filters: SearchFilter[];   // Extracted numeric filters
+}
+
+export interface SearchFilter {
+  field: string;             // SQL column: price_usd, price_change_24h, volume_24h, liquidity_usd, market_cap
+  op: ">=" | "<=" | ">" | "<" | "=";
+  value: number;
+  label: string;             // Human-readable: "price < $1"
+}
+
+// Pattern: "under $1", "below $0.01", "less than $50K"
+const UNDER_PRICE_RE = /\b(?:under|below|less\s+than|cheaper\s+than|<)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+// Pattern: "over $1", "above $100", "more than $50K", "> $1M"
+const OVER_PRICE_RE = /\b(?:over|above|more\s+than|greater\s+than|>)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+// Pattern: "up 30%", "gained 50%", "+20%"
+const UP_PCT_RE = /\b(?:up|gained|gaining|pumping|pumped|\+)\s*([\d.]+)\s*%/i;
+// Pattern: "down 30%", "dropped 50%", "-20%"
+const DOWN_PCT_RE = /\b(?:down|dropped|dropping|dumping|dumped|-)\s*([\d.]+)\s*%/i;
+// Pattern: "volume > $50K", "vol over $1M"
+const VOLUME_RE = /\b(?:vol(?:ume)?)\s*(?:>|over|above)?\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+// Pattern: "liquidity > $50K", "liq over $100K"
+const LIQUIDITY_RE = /\b(?:liq(?:uidity)?)\s*(?:>|over|above)?\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+// Pattern: "mcap > $1M", "market cap over $10M"
+const MCAP_RE = /\b(?:mcap|market\s*cap)\s*(?:>|over|above)?\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+
+function parseMultiplier(suffix: string | undefined): number {
+  if (!suffix) return 1;
+  switch (suffix.toLowerCase()) {
+    case "k": return 1_000;
+    case "m": return 1_000_000;
+    case "b": return 1_000_000_000;
+    default: return 1;
+  }
+}
+
+function parseNum(raw: string, suffix?: string): number {
+  const n = parseFloat(raw.replace(/,/g, ""));
+  return n * parseMultiplier(suffix);
+}
+
+export function parseQueryFilters(query: string): ParsedQuery {
+  const filters: SearchFilter[] = [];
+  let text = query;
+
+  // Extract volume BEFORE price (so "volume over $10K" doesn't match as price)
+  const volMatch = text.match(VOLUME_RE);
+  if (volMatch) {
+    const val = parseNum(volMatch[1], volMatch[2]);
+    filters.push({ field: "volume_24h", op: ">=", value: val, label: `vol ≥ $${volMatch[1]}${volMatch[2] || ""}` });
+    text = text.replace(VOLUME_RE, " ");
+  }
+
+  // Extract liquidity BEFORE price
+  const liqMatch = text.match(LIQUIDITY_RE);
+  if (liqMatch) {
+    const val = parseNum(liqMatch[1], liqMatch[2]);
+    filters.push({ field: "liquidity_usd", op: ">=", value: val, label: `liq ≥ $${liqMatch[1]}${liqMatch[2] || ""}` });
+    text = text.replace(LIQUIDITY_RE, " ");
+  }
+
+  // Extract market cap BEFORE price
+  const mcapMatch = text.match(MCAP_RE);
+  if (mcapMatch) {
+    const val = parseNum(mcapMatch[1], mcapMatch[2]);
+    filters.push({ field: "market_cap", op: ">=", value: val, label: `mcap ≥ $${mcapMatch[1]}${mcapMatch[2] || ""}` });
+    text = text.replace(MCAP_RE, " ");
+  }
+
+  // Extract price < X (after volume/liq/mcap to avoid conflicts)
+  const underMatch = text.match(UNDER_PRICE_RE);
+  if (underMatch) {
+    const val = parseNum(underMatch[1], underMatch[2]);
+    filters.push({ field: "price_usd", op: "<=", value: val, label: `price ≤ $${underMatch[1]}${underMatch[2] || ""}` });
+    text = text.replace(UNDER_PRICE_RE, " ");
+  }
+
+  // Extract price > X
+  const overMatch = text.match(OVER_PRICE_RE);
+  if (overMatch) {
+    const val = parseNum(overMatch[1], overMatch[2]);
+    filters.push({ field: "price_usd", op: ">=", value: val, label: `price ≥ $${overMatch[1]}${overMatch[2] || ""}` });
+    text = text.replace(OVER_PRICE_RE, " ");
+  }
+
+  // Extract % up
+  const upMatch = text.match(UP_PCT_RE);
+  if (upMatch) {
+    const val = parseFloat(upMatch[1]);
+    filters.push({ field: "price_change_24h", op: ">=", value: val, label: `24h ≥ +${val}%` });
+    text = text.replace(UP_PCT_RE, " ");
+  }
+
+  // Extract % down
+  const downMatch = text.match(DOWN_PCT_RE);
+  if (downMatch) {
+    const val = parseFloat(downMatch[1]);
+    filters.push({ field: "price_change_24h", op: "<=", value: -val, label: `24h ≤ -${val}%` });
+    text = text.replace(DOWN_PCT_RE, " ");
+  }
+
+  // Clean up remaining text
+  const searchText = text.replace(/\s+/g, " ").trim();
+
+  return { searchText, filters };
+}
+
+/**
+ * Build SQL WHERE clause fragments for parsed filters
+ */
+export function buildFilterSQL(filters: SearchFilter[]): { where: string; params: number[] } {
+  if (filters.length === 0) return { where: "", params: [] };
+
+  const clauses: string[] = [];
+  const params: number[] = [];
+
+  for (const f of filters) {
+    clauses.push(`p.${f.field} ${f.op} ?`);
+    params.push(f.value);
+  }
+
+  return {
+    where: " AND " + clauses.join(" AND "),
+    params,
+  };
+}
+
+/* ── Result Deduplication ───────────────────────────────── */
+
+/**
+ * Deduplicate search results: keep only the highest-volume pool per unique token.
+ * This prevents showing 7 BONK/SOL, BONK/USDC, etc.
+ */
+export function deduplicateByToken(
+  tokens: Record<string, any>[] // eslint-disable-line @typescript-eslint/no-explicit-any
+): Record<string, any>[] { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const byToken = new Map<string, Record<string, any>>(); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  for (const t of tokens) {
+    const key = t.token_base_address || t.token_address || t.address;
+    if (!key) continue;
+
+    const existing = byToken.get(key);
+    if (!existing) {
+      byToken.set(key, t);
+    } else {
+      // Keep higher volume, or higher relevance/rrfScore
+      const newVol = Number(t.volume_24h || 0);
+      const existVol = Number(existing.volume_24h || 0);
+      const newScore = Number(t._rrfScore || t.relevance || 0);
+      const existScore = Number(existing._rrfScore || existing.relevance || 0);
+
+      if (newScore > existScore || (newScore === existScore && newVol > existVol)) {
+        byToken.set(key, t);
+      }
+    }
+  }
+
+  return Array.from(byToken.values());
+}
+
 /* ── Search Engine Label ────────────────────────────────── */
 
 export function getSearchEngineLabel(strategy: QueryIntent, usedVector: boolean): string {
