@@ -126,6 +126,7 @@ export function SearchBar({}: SearchBarProps) {
   const [trending, setTrending] = useState<TrendingData | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchEngine, setSearchEngine] = useState("");
+  const [searchStrategy, setSearchStrategy] = useState("");
   const [queryInterpreted, setQueryInterpreted] = useState<string | undefined>();
   const [queryTimeMs, setQueryTimeMs] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -173,6 +174,7 @@ export function SearchBar({}: SearchBarProps) {
         setTokenResults(data.tokens || []);
         setEventResults(data.events || []);
         setSearchEngine(data.search_engine || "");
+        setSearchStrategy(data.search_strategy || "");
         setQueryInterpreted(data.query_interpreted);
         setQueryTimeMs(data.query_time_ms || 0);
         setShowDropdown(true);
@@ -435,6 +437,7 @@ export function SearchBar({}: SearchBarProps) {
               {hasResults && (
                 <Footer
                   engine={searchEngine}
+                  strategy={searchStrategy}
                   timeMs={queryTimeMs}
                 />
               )}
@@ -728,33 +731,68 @@ function EventRow({
   );
 }
 
+const ENGINE_CONFIG: Record<string, { icon: string; label: string; bg: string; color: string }> = {
+  fts: {
+    icon: "auto_awesome",
+    label: "TiDB Full-Text Search",
+    bg: "linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(219, 52, 242, 0.05))",
+    color: "var(--accent-blue)",
+  },
+  vector: {
+    icon: "neurology",
+    label: "TiDB Vector Search",
+    bg: "linear-gradient(135deg, rgba(139, 92, 246, 0.10), rgba(219, 52, 242, 0.06))",
+    color: "#8B5CF6",
+  },
+  hybrid: {
+    icon: "merge",
+    label: "TiDB Hybrid Search (FTS + Vector)",
+    bg: "linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08))",
+    color: "#6366F1",
+  },
+  exact: {
+    icon: "pin",
+    label: "TiDB Index Lookup",
+    bg: "linear-gradient(135deg, rgba(48, 209, 88, 0.08), rgba(99, 102, 241, 0.05))",
+    color: "var(--accent-green)",
+  },
+  prefix: {
+    icon: "text_fields",
+    label: "TiDB Prefix Search",
+    bg: "linear-gradient(135deg, rgba(48, 209, 88, 0.08), rgba(99, 102, 241, 0.05))",
+    color: "var(--accent-green)",
+  },
+};
+
 function Footer({
   engine,
+  strategy,
   timeMs,
   label,
 }: {
   engine: string;
+  strategy?: string;
   timeMs: number;
   label?: string;
 }) {
+  const config = ENGINE_CONFIG[engine] || ENGINE_CONFIG.fts;
+  const isAdvanced = engine !== "like_fallback" && engine !== "none";
+
   return (
     <div
       className="px-4 py-2.5 flex items-center justify-center gap-2 border-t"
       style={{
         borderColor: "var(--border)",
-        background:
-          engine === "tici"
-            ? "linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(219, 52, 242, 0.05))"
-            : "var(--bg-secondary)",
+        background: isAdvanced ? config.bg : "var(--bg-secondary)",
       }}
     >
-      {engine === "tici" ? (
+      {isAdvanced ? (
         <>
           <span
             className="material-symbols-outlined search-badge-sparkle"
-            style={{ fontSize: 14, color: "var(--accent-blue)" }}
+            style={{ fontSize: 14, color: config.color }}
           >
-            auto_awesome
+            {config.icon}
           </span>
           <span
             className="text-[11px] font-medium"
@@ -762,9 +800,20 @@ function Footer({
           >
             {label ? `${label} ` : ""}Powered by{" "}
             <span className="search-badge-gradient-text">
-              TiDB Full-Text Search
+              {config.label}
             </span>
           </span>
+          {strategy && strategy !== engine && (
+            <span
+              className="text-[9px] px-1.5 py-0.5 rounded"
+              style={{
+                background: `${config.color}15`,
+                color: config.color,
+              }}
+            >
+              {strategy}
+            </span>
+          )}
           {timeMs > 0 && (
             <>
               <span

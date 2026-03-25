@@ -34,3 +34,21 @@ export const getPool = () => {
 
   return pool;
 };
+
+/**
+ * Run a callback with a dedicated connection using TiKV-only reads.
+ * Use this for non-vector queries to avoid TiFlash sync issues.
+ */
+export async function withTiKV<T>(
+  fn: (conn: mysql.PoolConnection) => Promise<T>
+): Promise<T> {
+  const conn = await getPool().getConnection();
+  try {
+    await conn.query("SET SESSION tidb_isolation_read_engines = 'tikv'");
+    return await fn(conn);
+  } finally {
+    // Reset to default so this pooled connection doesn't break FTS/Vector queries
+    await conn.query("SET SESSION tidb_isolation_read_engines = 'tikv,tiflash'").catch(() => {});
+    conn.release();
+  }
+}
