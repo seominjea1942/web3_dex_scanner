@@ -152,7 +152,7 @@ export default function PoolDetailPage() {
                 const isPos = change >= 0;
                 return (
                   <span className="text-xs font-semibold whitespace-nowrap" style={{ color: isPos ? "var(--accent-green)" : "var(--accent-red)" }}>
-                    {isPos ? "+" : ""}{formatPercent(change)}
+                    {formatPercent(change)}
                   </span>
                 );
               })()}
