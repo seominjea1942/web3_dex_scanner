@@ -625,7 +625,7 @@ async function searchExactSymbol(
   symbol: string
 ) {
   // Handle pair notation: "JUP/USDC" → search for "JUP"
-  const upper = symbol.includes("/") ? symbol.split("/")[0].toUpperCase() : symbol.toUpperCase();
+  const term = symbol.includes("/") ? symbol.split("/")[0] : symbol;
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT p.address, p.token_base_symbol, p.token_quote_symbol,
             p.token_base_address, p.price_usd, p.volume_24h,
@@ -635,10 +635,10 @@ async function searchExactSymbol(
             t.logo_url, t.name AS token_name
      FROM pools p
      LEFT JOIN tokens t ON p.token_base_address = t.address
-     WHERE p.token_base_symbol = ?
+     WHERE LOWER(p.token_base_symbol) = LOWER(?)
      ORDER BY p.volume_24h DESC
      LIMIT 10`,
-    [upper]
+    [term]
   );
   return rows;
 }
@@ -647,7 +647,7 @@ async function searchPrefix(
   db: DB,
   prefix: string
 ) {
-  const like = `${prefix.toUpperCase()}%`;
+  const like = `${prefix.toLowerCase()}%`;
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT p.address, p.token_base_symbol, p.token_quote_symbol,
             p.token_base_address, p.price_usd, p.volume_24h,
@@ -657,7 +657,7 @@ async function searchPrefix(
             t.logo_url, t.name AS token_name
      FROM pools p
      LEFT JOIN tokens t ON p.token_base_address = t.address
-     WHERE p.token_base_symbol LIKE ?
+     WHERE LOWER(p.token_base_symbol) LIKE ?
      ORDER BY p.volume_24h DESC
      LIMIT 20`,
     [like]
