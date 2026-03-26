@@ -242,13 +242,16 @@ const UP_PCT_RE = /\b(?:up|gained|gaining|pumping|pumped|over|above|\+)\s*([\d.]
 // Pattern: "down 30%", "dropped 50%", "-20%"
 const DOWN_PCT_RE = /\b(?:down|dropped|dropping|dumping|dumped|-)\s*([\d.]+)\s*%/i;
 
-// ── Volume: "volume > $50K", "vol over $1M", "volume under $10K"
+// ── Volume: "volume > $50K", "vol over $1M", "over 1M volume", "volume under $10K"
 const VOLUME_OVER_RE = /\b(?:vol(?:ume)?)\s*(?:>|over|above)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+const VOLUME_OVER_REVERSE_RE = /\b(?:over|above|more\s+than|>)\s*\$?([\d,.]+)\s*(k|m|b)?\s+(?:vol(?:ume)?|trading\s+vol(?:ume)?)\b/i; // "over 1M volume"
 const VOLUME_UNDER_RE = /\b(?:vol(?:ume)?)\s*(?:<|under|below)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+const VOLUME_UNDER_REVERSE_RE = /\b(?:under|below|less\s+than|<)\s*\$?([\d,.]+)\s*(k|m|b)?\s+(?:vol(?:ume)?)\b/i; // "under 10K volume"
 const VOLUME_BARE_RE = /\b(?:vol(?:ume)?)\s+\$?([\d,.]+)\s*(k|m|b)?\b/i; // "volume 1M" (no operator, assume >=)
 
-// ── Liquidity: "liquidity > $50K", "liq under $100K"
+// ── Liquidity: "liquidity > $50K", "liq under $100K", "over $50K liquidity"
 const LIQ_OVER_RE = /\b(?:liq(?:uidity)?)\s*(?:>|over|above)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+const LIQ_OVER_REVERSE_RE = /\b(?:over|above|more\s+than|>)\s*\$?([\d,.]+)\s*(k|m|b)?\s+(?:liq(?:uidity)?)\b/i; // "over 500K liquidity"
 const LIQ_UNDER_RE = /\b(?:liq(?:uidity)?)\s*(?:<|under|below)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
 
 // ── Market cap: "mcap > $1M", "mcap under 100k", "market cap below $500K"
@@ -531,18 +534,37 @@ export function parseQueryFilters(query: string): ParsedQuery {
     text = text.replace(DOWN_PCT_RE, " ");
   }
 
-  // ── 2. Volume (before generic price) ──
+  // ── 2. Volume (before generic price) — check BOTH "volume over X" AND "over X volume" ──
+  let volMatched = false;
   const volOverMatch = text.match(VOLUME_OVER_RE);
   if (volOverMatch) {
     filters.push({ field: "volume_24h", op: ">=", value: parseNum(volOverMatch[1], volOverMatch[2]), label: `vol ≥ $${volOverMatch[1]}${volOverMatch[2] || ""}` });
     text = text.replace(VOLUME_OVER_RE, " ");
+    volMatched = true;
+  }
+  if (!volMatched) {
+    const volOverRevMatch = text.match(VOLUME_OVER_REVERSE_RE);
+    if (volOverRevMatch) {
+      filters.push({ field: "volume_24h", op: ">=", value: parseNum(volOverRevMatch[1], volOverRevMatch[2]), label: `vol ≥ $${volOverRevMatch[1]}${volOverRevMatch[2] || ""}` });
+      text = text.replace(VOLUME_OVER_REVERSE_RE, " ");
+      volMatched = true;
+    }
   }
   const volUnderMatch = text.match(VOLUME_UNDER_RE);
   if (volUnderMatch) {
     filters.push({ field: "volume_24h", op: "<=", value: parseNum(volUnderMatch[1], volUnderMatch[2]), label: `vol ≤ $${volUnderMatch[1]}${volUnderMatch[2] || ""}` });
     text = text.replace(VOLUME_UNDER_RE, " ");
+    volMatched = true;
   }
-  if (!volOverMatch && !volUnderMatch) {
+  if (!volMatched) {
+    const volUnderRevMatch = text.match(VOLUME_UNDER_REVERSE_RE);
+    if (volUnderRevMatch) {
+      filters.push({ field: "volume_24h", op: "<=", value: parseNum(volUnderRevMatch[1], volUnderRevMatch[2]), label: `vol ≤ $${volUnderRevMatch[1]}${volUnderRevMatch[2] || ""}` });
+      text = text.replace(VOLUME_UNDER_REVERSE_RE, " ");
+      volMatched = true;
+    }
+  }
+  if (!volMatched) {
     const volBareMatch = text.match(VOLUME_BARE_RE);
     if (volBareMatch) {
       filters.push({ field: "volume_24h", op: ">=", value: parseNum(volBareMatch[1], volBareMatch[2]), label: `vol ≥ $${volBareMatch[1]}${volBareMatch[2] || ""}` });
@@ -550,11 +572,21 @@ export function parseQueryFilters(query: string): ParsedQuery {
     }
   }
 
-  // ── 3. Liquidity (before generic price) ──
+  // ── 3. Liquidity (before generic price) — both directions ──
+  let liqMatched = false;
   const liqOverMatch = text.match(LIQ_OVER_RE);
   if (liqOverMatch) {
     filters.push({ field: "liquidity_usd", op: ">=", value: parseNum(liqOverMatch[1], liqOverMatch[2]), label: `liq ≥ $${liqOverMatch[1]}${liqOverMatch[2] || ""}` });
     text = text.replace(LIQ_OVER_RE, " ");
+    liqMatched = true;
+  }
+  if (!liqMatched) {
+    const liqOverRevMatch = text.match(LIQ_OVER_REVERSE_RE);
+    if (liqOverRevMatch) {
+      filters.push({ field: "liquidity_usd", op: ">=", value: parseNum(liqOverRevMatch[1], liqOverRevMatch[2]), label: `liq ≥ $${liqOverRevMatch[1]}${liqOverRevMatch[2] || ""}` });
+      text = text.replace(LIQ_OVER_REVERSE_RE, " ");
+      liqMatched = true;
+    }
   }
   const liqUnderMatch = text.match(LIQ_UNDER_RE);
   if (liqUnderMatch) {
