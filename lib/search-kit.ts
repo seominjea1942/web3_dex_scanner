@@ -221,9 +221,11 @@ export interface ParsedQuery {
   searchText: string;        // The text part to search (without filter expressions)
   filters: SearchFilter[];   // Extracted numeric filters
   dex: string | null;        // Extracted DEX name (e.g., "raydium")
+  dexExclude: boolean;       // true for "not on jupiter" → exclude this DEX
   sortDirective: { field: string; order: "DESC" | "ASC" } | null; // e.g., "top gainers"
   timeFilterHours: number | null; // e.g., 24 for "today", 1 for "last hour", -720 for "older than 30 days"
   timeLabel: string;         // Human-readable: "today", "last 1h", etc.
+  heuristic: string | null;  // Matched heuristic pattern name (e.g., "breakout", "gem")
 }
 
 export interface SearchFilter {
@@ -257,6 +259,111 @@ const MCAP_BARE_RE = /\b(?:mcap|market\s*cap)\s+\$?([\d,.]+)\s*(k|m|b)?\b/i; // 
 const UNDER_PRICE_RE = /\b(?:under|below|less\s+than|cheaper\s+than|<)\s*\$?([\d,.]+)\s*(k|m|b|cent|cents|penny)?\b/i;
 const OVER_PRICE_RE = /\b(?:over|above|more\s+than|greater\s+than|>)\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
 const SUB_PENNY_RE = /\bsub[\s-]?penn(?:y|ies)\b/i;
+
+// ── Range filter: "between $1 and $5"
+const BETWEEN_PRICE_RE = /\bbetween\s*\$?([\d,.]+)\s*(k|m|b)?\s*and\s*\$?([\d,.]+)\s*(k|m|b)?\b/i;
+
+// ── Transaction count: "over 1000 transactions", "more than 500 txns"
+const TXN_COUNT_RE = /\b(?:over|above|more\s+than|>)\s*([\d,.]+)\s*(?:transactions?|txns?|trades?)\b/i;
+
+// ── Buy/sell ratio: "buy sell ratio bullish", "more buys than sells"
+const BULLISH_RATIO_RE = /\b(?:buy\s*(?:\/|sell)?\s*ratio\s*(?:bullish|high|strong)|more\s+buys?\s+than\s+sells?)\b/i;
+const BEARISH_RATIO_RE = /\b(?:buy\s*(?:\/|sell)?\s*ratio\s*(?:bearish|low|weak)|more\s+sells?\s+than\s+buys?)\b/i;
+
+// ── Mcap/Volume ratio: "mcap to volume ratio under 5"
+const MCAP_VOL_RATIO_RE = /\b(?:mcap|market\s*cap)\s*(?:to|\/)\s*(?:vol(?:ume)?)\s*ratio\s*(?:under|below|<)\s*([\d.]+)\b/i;
+
+// ── DEX exclusion: "not on jupiter", "exclude raydium"
+const DEX_EXCLUDE_RE = /\b(?:not\s+on|exclude|without|except)\s+(\w+)\b/i;
+
+// ── Heuristic pattern triggers (LLM-free alternatives for complex intents)
+interface HeuristicRule {
+  filters: SearchFilter[];
+  sort?: { field: string; order: "DESC" | "ASC" };
+}
+
+const HEURISTIC_TRIGGERS: Record<string, HeuristicRule> = {
+  "recovering from dip": {
+    filters: [
+      { field: "price_change_24h", op: ">=", value: 5, label: "24h ≥ +5% (recovering)" },
+    ],
+    sort: { field: "price_change_24h", order: "DESC" },
+  },
+  "recovery": {
+    filters: [
+      { field: "price_change_24h", op: ">=", value: 5, label: "24h ≥ +5% (recovering)" },
+    ],
+    sort: { field: "price_change_24h", order: "DESC" },
+  },
+  "bouncing back": {
+    filters: [
+      { field: "price_change_24h", op: ">=", value: 5, label: "24h ≥ +5% (bouncing)" },
+    ],
+    sort: { field: "price_change_24h", order: "DESC" },
+  },
+  "breakout": {
+    filters: [
+      { field: "price_change_24h", op: ">=", value: 20, label: "24h ≥ +20% (breakout)" },
+    ],
+    sort: { field: "price_change_24h", order: "DESC" },
+  },
+  "breaking out": {
+    filters: [
+      { field: "price_change_24h", op: ">=", value: 20, label: "24h ≥ +20% (breakout)" },
+    ],
+    sort: { field: "price_change_24h", order: "DESC" },
+  },
+  "100x": {
+    filters: [
+      { field: "market_cap", op: "<=", value: 100_000, label: "mcap ≤ $100K (gem)" },
+      { field: "volume_24h", op: ">=", value: 5_000, label: "vol ≥ $5K (active)" },
+    ],
+    sort: { field: "volume_24h", order: "DESC" },
+  },
+  "gem": {
+    filters: [
+      { field: "market_cap", op: "<=", value: 500_000, label: "mcap ≤ $500K (gem)" },
+      { field: "volume_24h", op: ">=", value: 1_000, label: "vol ≥ $1K (active)" },
+    ],
+    sort: { field: "volume_24h", order: "DESC" },
+  },
+  "moonshot": {
+    filters: [
+      { field: "market_cap", op: "<=", value: 200_000, label: "mcap ≤ $200K (moonshot)" },
+    ],
+    sort: { field: "price_change_24h", order: "DESC" },
+  },
+  "all time high": {
+    filters: [
+      { field: "price_change_24h", op: ">=", value: 30, label: "24h ≥ +30% (ATH candidate)" },
+    ],
+    sort: { field: "price_change_24h", order: "DESC" },
+  },
+  "new all time high": {
+    filters: [
+      { field: "price_change_24h", op: ">=", value: 30, label: "24h ≥ +30% (ATH candidate)" },
+    ],
+    sort: { field: "price_change_24h", order: "DESC" },
+  },
+  "steady uptrend": {
+    filters: [
+      { field: "price_change_24h", op: ">=", value: 5, label: "24h ≥ +5% (uptrend)" },
+    ],
+    sort: { field: "price_change_24h", order: "DESC" },
+  },
+  "uptrend": {
+    filters: [
+      { field: "price_change_24h", op: ">=", value: 5, label: "24h ≥ +5% (uptrend)" },
+    ],
+    sort: { field: "price_change_24h", order: "DESC" },
+  },
+  "volume spike": {
+    filters: [
+      { field: "volume_24h", op: ">=", value: 50_000, label: "vol ≥ $50K (spike)" },
+    ],
+    sort: { field: "volume_24h", order: "DESC" },
+  },
+};
 
 // ── Time/age: "last hour", "today", "this week", "new", "launched today"
 const TIME_FILTERS: { re: RegExp; hours: number; label: string }[] = [
@@ -295,17 +402,40 @@ export function parseQueryFilters(query: string): ParsedQuery {
   const filters: SearchFilter[] = [];
   let text = query;
   let dex: string | null = null;
+  let dexExclude = false;
   let sortDirective: { field: string; order: "DESC" | "ASC" } | null = null;
   let timeFilterHours: number | null = null;
   let timeLabel = "";
+  let heuristic: string | null = null;
 
-  // ── 0. Extract DEX name ──
-  const lowerText = text.toLowerCase();
-  for (const dexName of Array.from(KNOWN_DEXES)) {
-    if (lowerText.includes(dexName)) {
-      dex = dexName;
-      text = text.replace(new RegExp(`\\b${dexName}\\b`, "gi"), " ");
-      break;
+  // ── -1. Check DEX exclusion FIRST ("not on jupiter", "exclude raydium") ──
+  const excludeMatch = text.match(DEX_EXCLUDE_RE);
+  if (excludeMatch) {
+    const excludeName = excludeMatch[1].toLowerCase();
+    if (KNOWN_DEXES.has(excludeName)) {
+      dex = excludeName;
+      dexExclude = true;
+      text = text.replace(DEX_EXCLUDE_RE, " ");
+    }
+  }
+
+  // ── 0. Extract DEX name (only if not already set by exclusion) ──
+  if (!dex) {
+    // Check if DEX name is also a token name — if so, keep it for search
+    const AMBIGUOUS_DEX_TOKENS = new Set(["jupiter", "orca", "raydium"]);
+    const lowerText = text.toLowerCase();
+    for (const dexName of Array.from(KNOWN_DEXES)) {
+      if (lowerText.includes(dexName)) {
+        // "jupiter token" → ambiguous; search for jupiter as token too
+        const hasTokenWord = /\b(?:token|coin|price)\b/i.test(text);
+        if (AMBIGUOUS_DEX_TOKENS.has(dexName) && hasTokenWord) {
+          // Don't extract as DEX filter — let it remain as search text
+          break;
+        }
+        dex = dexName;
+        text = text.replace(new RegExp(`\\b${dexName}\\b`, "gi"), " ");
+        break;
+      }
     }
   }
 
@@ -412,25 +542,77 @@ export function parseQueryFilters(query: string): ParsedQuery {
     text = text.replace(SUB_PENNY_RE, " ");
   }
 
-  // ── 6. Generic price under/over (LAST — everything else already extracted) ──
-  const underMatch = text.match(UNDER_PRICE_RE);
-  if (underMatch) {
-    const val = parseNum(underMatch[1], underMatch[2]);
-    filters.push({ field: "price_usd", op: "<=", value: val, label: `price ≤ $${val}` });
-    text = text.replace(UNDER_PRICE_RE, " ");
+  // ── 5b. Range filter: "between $1 and $5" ──
+  const betweenMatch = text.match(BETWEEN_PRICE_RE);
+  if (betweenMatch) {
+    const low = parseNum(betweenMatch[1], betweenMatch[2]);
+    const high = parseNum(betweenMatch[3], betweenMatch[4]);
+    filters.push({ field: "price_usd", op: ">=", value: Math.min(low, high), label: `price ≥ $${Math.min(low, high)}` });
+    filters.push({ field: "price_usd", op: "<=", value: Math.max(low, high), label: `price ≤ $${Math.max(low, high)}` });
+    text = text.replace(BETWEEN_PRICE_RE, " ");
   }
 
-  const overMatch = text.match(OVER_PRICE_RE);
-  if (overMatch) {
-    const val = parseNum(overMatch[1], overMatch[2]);
-    filters.push({ field: "price_usd", op: ">=", value: val, label: `price ≥ $${val}` });
-    text = text.replace(OVER_PRICE_RE, " ");
+  // ── 5c. Mcap/volume ratio: "mcap to volume ratio under 5" ──
+  const ratioMatch = text.match(MCAP_VOL_RATIO_RE);
+  if (ratioMatch) {
+    // We'll handle this as a special filter in the search route
+    const val = parseFloat(ratioMatch[1]);
+    filters.push({ field: "_mcap_vol_ratio", op: "<=", value: val, label: `mcap/vol ratio ≤ ${val}` });
+    text = text.replace(MCAP_VOL_RATIO_RE, " ");
+  }
+
+  // ── 5d. Transaction count: "over 1000 transactions" ──
+  const txnMatch = text.match(TXN_COUNT_RE);
+  if (txnMatch) {
+    const val = parseNum(txnMatch[1]);
+    filters.push({ field: "_txn_count_24h", op: ">=", value: val, label: `txns ≥ ${val}` });
+    text = text.replace(TXN_COUNT_RE, " ");
+  }
+
+  // ── 5e. Buy/sell ratio ──
+  if (BULLISH_RATIO_RE.test(text)) {
+    filters.push({ field: "_buy_sell_ratio", op: ">=", value: 1.5, label: "bullish ratio (buys > sells)" });
+    text = text.replace(BULLISH_RATIO_RE, " ");
+  } else if (BEARISH_RATIO_RE.test(text)) {
+    filters.push({ field: "_buy_sell_ratio", op: "<=", value: 0.67, label: "bearish ratio (sells > buys)" });
+    text = text.replace(BEARISH_RATIO_RE, " ");
+  }
+
+  // ── 6. Generic price under/over (LAST — everything else already extracted) ──
+  if (!betweenMatch) {
+    const underMatch = text.match(UNDER_PRICE_RE);
+    if (underMatch) {
+      const val = parseNum(underMatch[1], underMatch[2]);
+      filters.push({ field: "price_usd", op: "<=", value: val, label: `price ≤ $${val}` });
+      text = text.replace(UNDER_PRICE_RE, " ");
+    }
+
+    const overMatch = text.match(OVER_PRICE_RE);
+    if (overMatch) {
+      const val = parseNum(overMatch[1], overMatch[2]);
+      filters.push({ field: "price_usd", op: ">=", value: val, label: `price ≥ $${val}` });
+      text = text.replace(OVER_PRICE_RE, " ");
+    }
+  }
+
+  // ── 7. Heuristic pattern matching (check AFTER filter extraction) ──
+  const cleanedLower = text.toLowerCase().trim();
+  for (const [trigger, rule] of Object.entries(HEURISTIC_TRIGGERS).sort((a, b) => b[0].length - a[0].length)) {
+    if (cleanedLower.includes(trigger)) {
+      heuristic = trigger;
+      filters.push(...rule.filters);
+      if (rule.sort && !sortDirective) {
+        sortDirective = rule.sort;
+      }
+      text = text.replace(new RegExp(trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "gi"), " ");
+      break;
+    }
   }
 
   // Clean up remaining text
   const searchText = text.replace(/\s+/g, " ").trim();
 
-  return { searchText, filters, dex, sortDirective, timeFilterHours, timeLabel };
+  return { searchText, filters, dex, dexExclude, sortDirective, timeFilterHours, timeLabel, heuristic };
 }
 
 /**

@@ -94,9 +94,11 @@ export async function GET(req: NextRequest) {
   const parsed = parseQueryFilters(q);
   const filters = parsed.filters;
   const dexFilter = parsed.dex;
+  const dexExclude = parsed.dexExclude;
   const sortDirective = parsed.sortDirective;
   const timeFilterHours = parsed.timeFilterHours;
   const timeLabel = parsed.timeLabel;
+  const heuristic = parsed.heuristic;
   const effectiveQuery = parsed.searchText || q;
 
   const searchTerms = extractSearchTerms(effectiveQuery);
@@ -116,7 +118,7 @@ export async function GET(req: NextRequest) {
     let usedVector = false;
 
     // Filter-only queries: use TiFlash columnar engine for analytics scans
-    const filterOpts = { dex: dexFilter, timeFilterHours, sortDirective };
+    const filterOpts = { dex: dexFilter, dexExclude, timeFilterHours, sortDirective };
     if (isFilterOnly) {
       tokens = await withTiFlash((conn) => searchFilterOnly(conn, filters, filterOpts)).catch(
         // Fallback to TiKV if TiFlash unavailable
@@ -233,7 +235,21 @@ export async function GET(req: NextRequest) {
     if (filters.length > 0) {
       tokens = tokens.filter((t) =>
         filters.every((f) => {
-          const val = Number(t[f.field]);
+          // Handle special computed filter fields
+          let val: number;
+          if (f.field === "_mcap_vol_ratio") {
+            const mcap = Number(t.market_cap || 0);
+            const vol = Number(t.volume_24h || 1);
+            val = vol > 0 ? mcap / vol : 9999;
+          } else if (f.field === "_txn_count_24h") {
+            val = (Number(t.txns_24h_buys || 0) + Number(t.txns_24h_sells || 0));
+          } else if (f.field === "_buy_sell_ratio") {
+            const buys = Number(t.txns_24h_buys || 0);
+            const sells = Number(t.txns_24h_sells || 1);
+            val = sells > 0 ? buys / sells : buys > 0 ? 999 : 1;
+          } else {
+            val = Number(t[f.field]);
+          }
           if (isNaN(val)) return false;
           switch (f.op) {
             case ">=": return val >= f.value;
@@ -250,7 +266,12 @@ export async function GET(req: NextRequest) {
     // Apply DEX filter (in-memory for non-filter-only queries)
     if (dexFilter && !isFilterOnly) {
       const dexLower = dexFilter.toLowerCase();
-      tokens = tokens.filter((t) => (t.dex || "").toLowerCase() === dexLower);
+      if (dexExclude) {
+        // "not on jupiter" → exclude this DEX
+        tokens = tokens.filter((t) => (t.dex || "").toLowerCase() !== dexLower);
+      } else {
+        tokens = tokens.filter((t) => (t.dex || "").toLowerCase() === dexLower);
+      }
     }
 
     // Apply time filter (in-memory for non-filter-only queries)
@@ -320,9 +341,10 @@ export async function GET(req: NextRequest) {
 
     const allLabels = [
       ...filters.map((f) => f.label),
-      ...(dexFilter ? [`dex: ${dexFilter}`] : []),
+      ...(dexFilter ? [`${dexExclude ? "exclude " : ""}dex: ${dexFilter}`] : []),
       ...(timeLabel ? [timeLabel] : []),
       ...(sortDirective ? [`sort: ${sortDirective.field} ${sortDirective.order}`] : []),
+      ...(heuristic ? [`pattern: ${heuristic}`] : []),
     ];
 
     const response = {
@@ -353,17 +375,24 @@ async function searchFilterOnly(
   filters: SearchFilter[],
   opts?: {
     dex?: string | null;
+    dexExclude?: boolean;
     timeFilterHours?: number | null;
     sortDirective?: { field: string; order: "DESC" | "ASC" } | null;
   }
 ) {
-  const { where, params } = buildFilterSQL(filters);
+  // Filter out special computed fields (handled in-memory)
+  const sqlFilters = filters.filter((f) => !f.field.startsWith("_"));
+  const { where, params } = buildFilterSQL(sqlFilters);
   const allParams: (string | number)[] = [...params];
   let extraWhere = "";
 
-  // DEX filter
+  // DEX filter (include or exclude)
   if (opts?.dex) {
-    extraWhere += " AND LOWER(p.dex) = ?";
+    if (opts.dexExclude) {
+      extraWhere += " AND LOWER(p.dex) != ?";
+    } else {
+      extraWhere += " AND LOWER(p.dex) = ?";
+    }
     allParams.push(opts.dex.toLowerCase());
   }
 
