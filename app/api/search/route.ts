@@ -99,6 +99,7 @@ export async function GET(req: NextRequest) {
   const timeFilterHours = parsed.timeFilterHours;
   const timeLabel = parsed.timeLabel;
   const heuristic = parsed.heuristic;
+  const comparison = parsed.comparison;
   const effectiveQuery = parsed.searchText || q;
 
   const searchTerms = extractSearchTerms(effectiveQuery);
@@ -116,6 +117,39 @@ export async function GET(req: NextRequest) {
     let tokens: Record<string, any>[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
     let events: RowDataPacket[] = [];
     let usedVector = false;
+
+    // Handle "vs" comparison queries
+    if (comparison) {
+      const [leftResults, rightResults] = await Promise.all([
+        withTiKV((conn) => searchExactSymbol(conn, comparison.left)),
+        withTiKV((conn) => searchExactSymbol(conn, comparison.right)),
+      ]);
+      // If exact symbol didn't find results, try FTS
+      const left = leftResults.length > 0 ? leftResults : (await searchFTS(db, comparison.left)).tokens;
+      const right = rightResults.length > 0 ? rightResults : (await searchFTS(db, comparison.right)).tokens;
+
+      // Tag results with comparison side
+      for (const t of left) t._comparison_side = "left";
+      for (const t of right) t._comparison_side = "right";
+
+      tokens = [...left.slice(0, 5), ...right.slice(0, 5)];
+      tokens = deduplicateByToken(tokens);
+      tokens = await withTiKV((conn) => enrichTokens(conn, tokens));
+
+      const queryTimeMs = Math.round(performance.now() - start);
+      const response = {
+        tokens,
+        events: [],
+        comparison: { left: comparison.left, right: comparison.right },
+        search_engine: "comparison",
+        search_strategy: "comparison",
+        query_interpreted: `${comparison.left} vs ${comparison.right}`,
+        filters_applied: ["comparison"],
+        query_time_ms: queryTimeMs,
+      };
+      setCache(cacheKey, response);
+      return NextResponse.json(response);
+    }
 
     // Filter-only queries: use TiFlash columnar engine for analytics scans
     const filterOpts = { dex: dexFilter, dexExclude, timeFilterHours, sortDirective };
@@ -231,6 +265,9 @@ export async function GET(req: NextRequest) {
     // Deduplicate: keep only the best pool per unique token
     tokens = deduplicateByToken(tokens);
 
+    // Enrich with safety + whale + stats data BEFORE filters (safety filters need enriched data)
+    tokens = await withTiKV((conn) => enrichTokens(conn, tokens));
+
     // Apply parsed numeric filters (e.g., "under $1" → price_usd <= 1)
     if (filters.length > 0) {
       tokens = tokens.filter((t) =>
@@ -247,6 +284,24 @@ export async function GET(req: NextRequest) {
             const buys = Number(t.txns_24h_buys || 0);
             const sells = Number(t.txns_24h_sells || 1);
             val = sells > 0 ? buys / sells : buys > 0 ? 999 : 1;
+          } else if (f.field === "_is_verified") {
+            val = Number(t.is_verified || 0);
+          } else if (f.field === "_is_lp_burned") {
+            val = Number(t.is_lp_burned || 0);
+          } else if (f.field === "_lp_locked") {
+            val = Number(t.lp_locked || 0);
+          } else if (f.field === "_is_mintable") {
+            val = Number(t.is_mintable ?? 1); // default to mintable (unsafe)
+          } else if (f.field === "_risk_score") {
+            val = Number(t.risk_score || 0);
+          } else if (f.field === "_holder_count") {
+            val = Number(t.holder_count || 0);
+          } else if (f.field === "_unique_traders") {
+            val = Number(t.unique_traders_24h || 0);
+          } else if (f.field === "_whale_events") {
+            val = Number(t.whale_events_24h || 0);
+          } else if (f.field === "_sector_query") {
+            val = 1; // always pass — sector results handled separately
           } else {
             val = Number(t[f.field]);
           }
@@ -303,9 +358,6 @@ export async function GET(req: NextRequest) {
         return order === "DESC" ? vb - va : va - vb;
       });
     }
-
-    // Enrich with safety + whale data (uses TiKV for reliable reads)
-    tokens = await withTiKV((conn) => enrichTokens(conn, tokens));
 
     // Sort: RRF score > relevance > popularity-boosted volume (breaks ties)
     tokens = tokens
@@ -380,9 +432,30 @@ async function searchFilterOnly(
     sortDirective?: { field: string; order: "DESC" | "ASC" } | null;
   }
 ) {
-  // Filter out special computed fields (handled in-memory)
+  // Separate SQL-safe filters from special computed ones
   const sqlFilters = filters.filter((f) => !f.field.startsWith("_"));
+  const safetyFilters = filters.filter((f) => f.field.startsWith("_"));
   const { where, params } = buildFilterSQL(sqlFilters);
+
+  // Map safety filter fields to SQL columns on token_safety (ts)
+  const safetyFieldMap: Record<string, string> = {
+    "_is_verified": "ts.is_verified",
+    "_is_lp_burned": "ts.is_lp_burned",
+    "_lp_locked": "ts.lp_locked",
+    "_is_mintable": "ts.is_mintable",
+    "_risk_score": "ts.risk_score",
+    "_holder_count": "COALESCE(ts.holder_count, 0)",
+  };
+  let safetyWhere = "";
+  const safetyParams: number[] = [];
+  const needsSafetyJoin = safetyFilters.some((f) => safetyFieldMap[f.field]);
+  for (const f of safetyFilters) {
+    const col = safetyFieldMap[f.field];
+    if (col) {
+      safetyWhere += ` AND ${col} ${f.op} ?`;
+      safetyParams.push(f.value);
+    }
+  }
   const allParams: (string | number)[] = [...params];
   let extraWhere = "";
 
@@ -423,7 +496,10 @@ async function searchFilterOnly(
     holder_count: "COALESCE(ts.holder_count, 0)",
   };
   const sqlSort = sortMap[sortCol] || `p.${sortCol}`;
-  const needsHolderJoin = sortCol === "holder_count";
+  const needsSafetyJoinForSort = sortCol === "holder_count";
+  const needsTsJoin = needsSafetyJoin || needsSafetyJoinForSort;
+
+  const finalParams = [...allParams, ...safetyParams];
 
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT p.address, p.token_base_symbol, p.token_quote_symbol,
@@ -432,14 +508,14 @@ async function searchFilterOnly(
             p.txns_24h_buys, p.txns_24h_sells,
             p.liquidity_usd, p.market_cap,
             t.logo_url, t.name AS token_name
-            ${needsHolderJoin ? ", COALESCE(ts.holder_count, 0) AS holder_count" : ""}
+            ${needsTsJoin ? ", ts.holder_count, ts.is_mintable, ts.is_verified, ts.is_lp_burned, ts.lp_locked, ts.risk_score" : ""}
      FROM pools p
      LEFT JOIN tokens t ON p.token_base_address = t.address
-     ${needsHolderJoin ? "LEFT JOIN token_safety ts ON ts.token_address = p.token_base_address" : ""}
-     WHERE 1=1 ${where} ${extraWhere}
+     ${needsTsJoin ? "LEFT JOIN token_safety ts ON ts.token_address = p.token_base_address" : ""}
+     WHERE 1=1 ${where} ${extraWhere} ${safetyWhere}
      ORDER BY ${sqlSort} ${sortOrder}
      LIMIT 50`,
-    allParams
+    finalParams
   );
   return rows;
 }
@@ -838,10 +914,11 @@ async function enrichTokens(
     ? poolAddresses.map(() => "?").join(",")
     : "'__none__'";
 
-  const [safetyRows, whaleRows, popRows] = await Promise.all([
+  const [safetyRows, whaleRows, popRows, statsRows] = await Promise.all([
     db
       .query<RowDataPacket[]>(
-        `SELECT token_address, holder_count, top10_holder_pct
+        `SELECT token_address, holder_count, top10_holder_pct,
+                is_mintable, is_freezable, is_verified, is_lp_burned, lp_locked, risk_score
          FROM token_safety
          WHERE token_address IN (${tPlaceholders})`,
         tokenAddresses
@@ -864,15 +941,30 @@ async function enrichTokens(
        WHERE address IN (${tPlaceholders})`,
       tokenAddresses
     ).catch(() => [[] as RowDataPacket[]]),
+    // Fetch pool stats (txn counts, unique traders)
+    poolAddresses.length > 0
+      ? db.query<RowDataPacket[]>(
+          `SELECT pool_address, txn_count_24h, unique_traders_24h, buy_sell_ratio
+           FROM pool_stats_live
+           WHERE pool_address IN (${pPlaceholders})`,
+          poolAddresses
+        ).catch(() => [[] as RowDataPacket[]])
+      : Promise.resolve([[] as RowDataPacket[]]),
   ]);
 
-  const safetyMap = new Map<string, { holder_count: number; top10_holder_pct: number }>();
+  const safetyMap = new Map<string, Record<string, any>>(); // eslint-disable-line @typescript-eslint/no-explicit-any
   const safetyData = (safetyRows as RowDataPacket[])[0] ?? safetyRows ?? [];
   const safetyList = Array.isArray(safetyData) ? safetyData : [];
   for (const s of safetyList) {
     safetyMap.set(s.token_address, {
       holder_count: s.holder_count ?? 0,
       top10_holder_pct: Number(s.top10_holder_pct) || 0,
+      is_mintable: s.is_mintable ?? 1,
+      is_freezable: s.is_freezable ?? 1,
+      is_verified: s.is_verified ?? 0,
+      is_lp_burned: s.is_lp_burned ?? 0,
+      lp_locked: s.lp_locked ?? 0,
+      risk_score: s.risk_score ?? 0,
     });
   }
 
@@ -891,15 +983,36 @@ async function enrichTokens(
     popMap.set(p.address, Number(p.search_popularity) || 0);
   }
 
+  // Build pool stats map
+  const statsMap = new Map<string, Record<string, any>>(); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const statsData = (statsRows as RowDataPacket[])[0] ?? statsRows ?? [];
+  const statsList = Array.isArray(statsData) ? statsData : [];
+  for (const st of statsList) {
+    statsMap.set(st.pool_address, {
+      txn_count_24h: Number(st.txn_count_24h) || 0,
+      unique_traders_24h: Number(st.unique_traders_24h) || 0,
+      buy_sell_ratio: Number(st.buy_sell_ratio) || 1,
+    });
+  }
+
   for (const row of tokens) {
     const addr = row.token_base_address || row.token_address;
     const safety = safetyMap.get(addr);
     row.holder_count = safety?.holder_count ?? null;
     row.top10_holder_pct = safety?.top10_holder_pct ?? null;
+    row.is_mintable = safety?.is_mintable ?? null;
+    row.is_freezable = safety?.is_freezable ?? null;
+    row.is_verified = safety?.is_verified ?? 0;
+    row.is_lp_burned = safety?.is_lp_burned ?? 0;
+    row.lp_locked = safety?.lp_locked ?? 0;
+    row.risk_score = safety?.risk_score ?? 0;
     row.txns_24h =
       (Number(row.txns_24h_buys) || 0) + (Number(row.txns_24h_sells) || 0);
     row.whale_events_24h = whaleMap.get(row.address) ?? 0;
     row.search_popularity = popMap.get(addr) ?? 0;
+    // Pool stats
+    const poolStats = statsMap.get(row.address);
+    row.unique_traders_24h = poolStats?.unique_traders_24h ?? 0;
   }
 
   return tokens;

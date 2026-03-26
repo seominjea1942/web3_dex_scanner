@@ -226,6 +226,7 @@ export interface ParsedQuery {
   timeFilterHours: number | null; // e.g., 24 for "today", 1 for "last hour", -720 for "older than 30 days"
   timeLabel: string;         // Human-readable: "today", "last 1h", etc.
   heuristic: string | null;  // Matched heuristic pattern name (e.g., "breakout", "gem")
+  comparison: { left: string; right: string } | null;  // "BONK vs WIF" → {left:"BONK", right:"WIF"}
 }
 
 export interface SearchFilter {
@@ -276,6 +277,26 @@ const MCAP_VOL_RATIO_RE = /\b(?:mcap|market\s*cap)\s*(?:to|\/)\s*(?:vol(?:ume)?)
 // ── DEX exclusion: "not on jupiter", "exclude raydium"
 const DEX_EXCLUDE_RE = /\b(?:not\s+on|exclude|without|except)\s+(\w+)\b/i;
 
+// ── Safety filters
+const VERIFIED_RE = /\b(?:verified\s+(?:tokens?\s+)?only|verified\s+tokens?|only\s+verified)\b/i;
+const BURNED_LP_RE = /\b(?:burned?\s+(?:lp|liquidity)|lp\s+burned?)\b/i;
+const LOCKED_LP_RE = /\b(?:locked?\s+(?:lp|liquidity)|lp\s+locked?)\b/i;
+const NO_MINT_RE = /\b(?:no\s+mint(?:\s+authority)?|mint\s+(?:authority\s+)?(?:revoked|renounced|disabled))\b/i;
+const SAFE_TOKEN_RE = /\b(?:safe|low\s+risk|safe(?:r|st))\b/i;
+const AUDIT_RE = /\b(?:with\s+audit|audited|audit(?:ed)?\s+tokens?)\b/i;
+const RUG_RE = /\b(?:rug\s+(?:pull\s+)?risk\s+low|low\s+rug|anti[\s-]?rug)\b/i;
+
+// ── "vs" comparison: "BONK vs WIF", "raydium vs orca"
+const VS_RE = /^(.+?)\s+vs\.?\s+(.+)$/i;
+
+// ── Holder/buyer patterns
+const GROWING_HOLDERS_RE = /\b(?:growing\s+holders?|holder\s+growth|increasing\s+holders?)\b/i;
+const UNIQUE_BUYERS_RE = /\b(?:unique\s+(?:buyers?|traders?)|distinct\s+(?:buyers?|traders?))\b/i;
+const INSIDER_RE = /\b(?:insider|smart\s+money\s+(?:buying|accumulating)|insider\s+wallets?)\b/i;
+
+// ── Sector/category
+const SECTOR_RE = /\b(?:sector|category|categories|sectors?)\b/i;
+
 // ── Heuristic pattern triggers (LLM-free alternatives for complex intents)
 interface HeuristicRule {
   filters: SearchFilter[];
@@ -322,8 +343,19 @@ const HEURISTIC_TRIGGERS: Record<string, HeuristicRule> = {
   },
   "gem": {
     filters: [
-      { field: "market_cap", op: "<=", value: 500_000, label: "mcap ≤ $500K (gem)" },
-      { field: "volume_24h", op: ">=", value: 1_000, label: "vol ≥ $1K (active)" },
+      { field: "market_cap", op: "<=", value: 2_000_000, label: "mcap ≤ $2M (gem)" },
+    ],
+    sort: { field: "volume_24h", order: "DESC" },
+  },
+  "low liquidity": {
+    filters: [
+      { field: "liquidity_usd", op: "<=", value: 10_000, label: "liq ≤ $10K (low)" },
+    ],
+    sort: { field: "volume_24h", order: "DESC" },
+  },
+  "micro cap": {
+    filters: [
+      { field: "market_cap", op: "<=", value: 100_000, label: "mcap ≤ $100K (micro)" },
     ],
     sort: { field: "volume_24h", order: "DESC" },
   },
@@ -407,6 +439,19 @@ export function parseQueryFilters(query: string): ParsedQuery {
   let timeFilterHours: number | null = null;
   let timeLabel = "";
   let heuristic: string | null = null;
+  let comparison: { left: string; right: string } | null = null;
+
+  // ── -2. Check "vs" comparison FIRST ──
+  const vsMatch = query.match(VS_RE);
+  if (vsMatch) {
+    comparison = { left: vsMatch[1].trim(), right: vsMatch[2].trim() };
+    // Don't extract further — return both parts as search
+    return {
+      searchText: query, filters: [], dex: null, dexExclude: false,
+      sortDirective: null, timeFilterHours: null, timeLabel: "",
+      heuristic: null, comparison,
+    };
+  }
 
   // ── -1. Check DEX exclusion FIRST ("not on jupiter", "exclude raydium") ──
   const excludeMatch = text.match(DEX_EXCLUDE_RE);
@@ -595,7 +640,59 @@ export function parseQueryFilters(query: string): ParsedQuery {
     }
   }
 
-  // ── 7. Heuristic pattern matching (check AFTER filter extraction) ──
+  // ── 7. Safety NL filters ──
+  if (VERIFIED_RE.test(text)) {
+    filters.push({ field: "_is_verified", op: ">=", value: 1, label: "verified only" });
+    text = text.replace(VERIFIED_RE, " ");
+  }
+  if (BURNED_LP_RE.test(text)) {
+    filters.push({ field: "_is_lp_burned", op: ">=", value: 1, label: "burned LP" });
+    text = text.replace(BURNED_LP_RE, " ");
+  }
+  if (LOCKED_LP_RE.test(text)) {
+    filters.push({ field: "_lp_locked", op: ">=", value: 1, label: "locked LP" });
+    text = text.replace(LOCKED_LP_RE, " ");
+  }
+  if (NO_MINT_RE.test(text)) {
+    filters.push({ field: "_is_mintable", op: "<=", value: 0, label: "no mint authority" });
+    text = text.replace(NO_MINT_RE, " ");
+  }
+  if (AUDIT_RE.test(text)) {
+    filters.push({ field: "_risk_score", op: ">=", value: 80, label: "audited (score ≥ 80)" });
+    text = text.replace(AUDIT_RE, " ");
+  }
+  if (RUG_RE.test(text)) {
+    filters.push({ field: "_risk_score", op: ">=", value: 50, label: "low rug risk (score ≥ 50)" });
+    text = text.replace(RUG_RE, " ");
+  }
+  if (SAFE_TOKEN_RE.test(text) && !filters.some(f => f.field.includes("risk"))) {
+    filters.push({ field: "_risk_score", op: ">=", value: 60, label: "safe (score ≥ 60)" });
+    text = text.replace(SAFE_TOKEN_RE, " ");
+  }
+
+  // ── 7b. Holder/buyer patterns ──
+  if (GROWING_HOLDERS_RE.test(text)) {
+    filters.push({ field: "_holder_count", op: ">=", value: 50, label: "holders ≥ 50 (growing)" });
+    if (!sortDirective) sortDirective = { field: "holder_count", order: "DESC" };
+    text = text.replace(GROWING_HOLDERS_RE, " ");
+  }
+  if (UNIQUE_BUYERS_RE.test(text)) {
+    filters.push({ field: "_unique_traders", op: ">=", value: 5, label: "unique traders ≥ 5" });
+    text = text.replace(UNIQUE_BUYERS_RE, " ");
+  }
+  if (INSIDER_RE.test(text)) {
+    // Map to whale/smart_money events
+    filters.push({ field: "_whale_events", op: ">=", value: 1, label: "insider/smart money activity" });
+    text = text.replace(INSIDER_RE, " ");
+  }
+
+  // ── 7c. Sector analytics ──
+  if (SECTOR_RE.test(text)) {
+    filters.push({ field: "_sector_query", op: ">=", value: 1, label: "sector analytics" });
+    text = text.replace(SECTOR_RE, " ");
+  }
+
+  // ── 8. Heuristic pattern matching (check AFTER filter extraction) ──
   const cleanedLower = text.toLowerCase().trim();
   for (const [trigger, rule] of Object.entries(HEURISTIC_TRIGGERS).sort((a, b) => b[0].length - a[0].length)) {
     if (cleanedLower.includes(trigger)) {
@@ -612,7 +709,7 @@ export function parseQueryFilters(query: string): ParsedQuery {
   // Clean up remaining text
   const searchText = text.replace(/\s+/g, " ").trim();
 
-  return { searchText, filters, dex, dexExclude, sortDirective, timeFilterHours, timeLabel, heuristic };
+  return { searchText, filters, dex, dexExclude, sortDirective, timeFilterHours, timeLabel, heuristic, comparison };
 }
 
 /**
