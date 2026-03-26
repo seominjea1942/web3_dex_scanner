@@ -123,7 +123,10 @@ async function main() {
       usdValue = Math.max(1, Math.round(usdValue * 100) / 100);
 
       const isBuy = Math.random() < 0.5;
-      let baseAmount = price > 0 ? usdValue / price : usdValue;
+      // Add realistic price drift: +/- 3% variation
+      const priceDrift = 1 + (Math.random() - 0.5) * 0.06;
+      const driftedPrice = price * priceDrift;
+      let baseAmount = driftedPrice > 0 ? usdValue / driftedPrice : usdValue;
       baseAmount = Math.min(baseAmount, 99_999_999_999_999);
       baseAmount = Math.round(baseAmount * 1_000_000) / 1_000_000;
 

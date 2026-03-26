@@ -76,11 +76,12 @@ async function detectRealEvents(
       );
     }
 
-    // ── Liquidity change: >$5K delta ──
+    // ── Liquidity change: >10% relative change and >$50K absolute ──
     if (old.liquidity_usd > 0 && liq > 0) {
       const liqDelta = liq - old.liquidity_usd;
       const absDelta = Math.abs(liqDelta);
-      if (absDelta >= 5_000) {
+      const relChange = absDelta / old.liquidity_usd;
+      if (absDelta >= 50_000 && relChange >= 0.10) {
         const isAdd = liqDelta > 0;
         placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?)");
         values.push(

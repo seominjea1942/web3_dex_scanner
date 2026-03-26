@@ -34,12 +34,21 @@ async function lazyGenerateEvents(db: MysqlPool) {
   const age = Number((ageRows[0] as Record<string, unknown>)?.age ?? 0);
   if (age < STALE_SEC) return; // fresh enough
 
-  // Pick a random sample of recent events as templates
+  // Pick templates with diverse event types (not just the most recent)
   const [templates] = await db.query<RowDataPacket[]>(
-    `SELECT event_type, severity, pool_address, dex, usd_value, description
-     FROM defi_events
-     ORDER BY timestamp DESC
-     LIMIT 200`
+    `(SELECT event_type, severity, pool_address, dex, usd_value, description FROM defi_events WHERE event_type = 'whale' ORDER BY timestamp DESC LIMIT 30)
+     UNION ALL
+     (SELECT event_type, severity, pool_address, dex, usd_value, description FROM defi_events WHERE event_type = 'large_trade' ORDER BY timestamp DESC LIMIT 30)
+     UNION ALL
+     (SELECT event_type, severity, pool_address, dex, usd_value, description FROM defi_events WHERE event_type = 'smart_money' ORDER BY timestamp DESC LIMIT 30)
+     UNION ALL
+     (SELECT event_type, severity, pool_address, dex, usd_value, description FROM defi_events WHERE event_type = 'liquidity_add' ORDER BY timestamp DESC LIMIT 20)
+     UNION ALL
+     (SELECT event_type, severity, pool_address, dex, usd_value, description FROM defi_events WHERE event_type = 'liquidity_remove' ORDER BY timestamp DESC LIMIT 20)
+     UNION ALL
+     (SELECT event_type, severity, pool_address, dex, usd_value, description FROM defi_events WHERE event_type = 'new_pool' ORDER BY timestamp DESC LIMIT 10)
+     UNION ALL
+     (SELECT event_type, severity, pool_address, dex, usd_value, description FROM defi_events WHERE event_type = 'swap' ORDER BY timestamp DESC LIMIT 30)`
   );
   if (templates.length === 0) return;
 
