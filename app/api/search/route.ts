@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool, withTiKV, withTiFlash } from "@/lib/db";
-import { cache } from "@/lib/cache";
 import {
   classifyQuery,
   getQueryEmbedding,
@@ -22,17 +21,6 @@ type DB = Pool | PoolConnection;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/* ── Response Cache (SWR via lib/cache) ────────────────── */
-const SEARCH_CACHE_TTL = 30_000; // 30s — same as before but with SWR
-
-// Legacy helpers kept for filter-only skip logic
-function setCache(key: string, data: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-  cache.set(key, data, SEARCH_CACHE_TTL);
-}
-function getCached(key: string): any | null { // eslint-disable-line @typescript-eslint/no-explicit-any
-  return cache.get(key);
-}
 
 const STOP_WORDS = new Set([
   "find", "search", "show", "get", "tokens", "token", "coins", "coin",
@@ -60,13 +48,6 @@ export async function GET(req: NextRequest) {
       search_engine: "none",
       search_strategy: "none",
     });
-
-  // Check response cache first
-  const cacheKey = q.toLowerCase().trim();
-  const cached = getCached(cacheKey);
-  if (cached) {
-    return NextResponse.json({ ...cached, _cached: true });
-  }
 
   const db = getPool();
   const start = performance.now();
@@ -412,9 +393,6 @@ export async function GET(req: NextRequest) {
       filters_applied: allLabels,
       query_time_ms: queryTimeMs,
     };
-
-    // Cache for 30s (skip caching filter-only queries as they change rapidly)
-    if (!isFilterOnly) setCache(cacheKey, response);
 
     return NextResponse.json(response);
   } catch (err) {
