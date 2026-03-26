@@ -45,26 +45,21 @@ LIMIT 15`,
   },
   {
     id: "time_series",
-    label: "price OHLCV",
+    label: "trade timeline",
     icon: "timeline",
     color: "var(--accent-green)",
-    tooltip: "Time-series analytics: GROUP BY date on 720K candles — TiFlash accelerated",
-    description: "Daily price data (Open, High, Low, Close, Volume) for a pool. The raw numbers behind every candlestick chart.",
-    sql: `SELECT DATE(FROM_UNIXTIME(ph.timestamp / 1000)) AS day,
-       ROUND(AVG(ph.close), 6) AS avg_close,
-       ROUND(MAX(ph.high), 6) AS day_high,
-       ROUND(MIN(ph.low), 6) AS day_low,
-       ROUND(SUM(ph.volume), 2) AS total_volume,
-       COUNT(*) AS candles
-FROM price_history ph
-WHERE ph.pool_address = (
-  SELECT ph2.pool_address FROM price_history ph2
-  GROUP BY ph2.pool_address
-  ORDER BY COUNT(*) DESC
-  LIMIT 1
-)
-GROUP BY day
-ORDER BY day
+    tooltip: "Time-series analytics: GROUP BY hour on 500K+ swap transactions — TiFlash accelerated",
+    description: "Hourly trading volume and trade count over the last 7 days. See when trading activity spikes across all pools.",
+    sql: `SELECT /*+ READ_FROM_STORAGE(TIFLASH[swap_transactions]) */
+       DATE(FROM_UNIXTIME(timestamp / 1000)) AS day,
+       HOUR(FROM_UNIXTIME(timestamp / 1000)) AS hour,
+       COUNT(*) AS trades,
+       ROUND(SUM(usd_value), 2) AS volume,
+       COUNT(DISTINCT pool_address) AS active_pools
+FROM swap_transactions
+WHERE timestamp > (UNIX_TIMESTAMP() * 1000 - 604800000)
+GROUP BY day, hour
+ORDER BY day DESC, hour DESC
 LIMIT 30`,
   },
   // ── Tier 2: Good demos (MySQL compatibility, search) ──
@@ -74,16 +69,17 @@ LIMIT 30`,
     icon: "leaderboard",
     color: "var(--accent-teal)",
     tooltip: "Advanced analytics: window functions (RANK, running totals) — MySQL-compatible",
-    description: "Top wallets ranked by volume — labels derived from real trading patterns using TiDB analytics.",
-    sql: `SELECT address, label, trade_count,
-       ROUND(total_volume, 2) AS total_volume,
-       RANK() OVER (ORDER BY total_volume DESC) AS volume_rank,
-       ROUND(SUM(total_volume) OVER (
-         ORDER BY total_volume DESC
+    description: "Top pools ranked by volume with running cumulative total — window functions on real pool data.",
+    sql: `SELECT token_base_symbol, token_quote_symbol, dex,
+       ROUND(volume_24h, 2) AS volume_24h,
+       RANK() OVER (ORDER BY volume_24h DESC) AS volume_rank,
+       ROUND(SUM(volume_24h) OVER (
+         ORDER BY volume_24h DESC
          ROWS UNBOUNDED PRECEDING
-       ), 2) AS cumulative_volume
-FROM wallet_profiles
-WHERE trade_count >= 5
+       ), 2) AS cumulative_volume,
+       ROUND(price_change_24h, 2) AS change_24h
+FROM pools
+WHERE volume_24h > 0
 ORDER BY volume_rank
 LIMIT 20`,
   },
@@ -152,21 +148,24 @@ ORDER BY usd_value DESC
 LIMIT 20`,
   },
   {
-    id: "smart_money",
-    label: "smart money",
-    icon: "diamond",
+    id: "token_safety",
+    label: "token safety",
+    icon: "shield",
     color: "var(--accent-red, #EF4444)",
-    tooltip: "Multi-condition filter: composite WHERE + ORDER on pre-aggregated profiles",
-    description: "Wallets classified as smart money by trade diversity and size — computed in a single SQL query, no ETL pipeline.",
-    sql: `SELECT address, label,
-       trade_count, buy_count, sell_count,
-       ROUND(total_volume, 2) AS total_volume,
-       pools_traded,
-       ROUND(avg_trade_size, 2) AS avg_trade_size
-FROM wallet_profiles
-WHERE pools_traded >= 3
-  AND trade_count >= 10
-ORDER BY total_volume DESC
+    tooltip: "Cross-table JOIN: safety scores × pool data — find suspicious tokens instantly",
+    description: "Token safety scores cross-referenced with market cap — find suspicious tokens with low safety scores.",
+    sql: `SELECT p.token_base_symbol AS symbol,
+       p.dex,
+       ROUND(p.market_cap) AS market_cap,
+       ROUND(p.volume_24h, 2) AS volume_24h,
+       ts.holder_count,
+       ts.top10_holder_pct,
+       ts.risk_score,
+       CASE WHEN ts.is_mintable THEN 'YES' ELSE 'NO' END AS mintable,
+       CASE WHEN ts.is_lp_burned THEN 'YES' ELSE 'NO' END AS lp_burned
+FROM token_safety ts
+JOIN pools p ON ts.token_address = p.token_base_address
+ORDER BY ts.risk_score DESC
 LIMIT 15`,
   },
 ] as const;
