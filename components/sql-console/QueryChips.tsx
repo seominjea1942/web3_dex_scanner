@@ -16,8 +16,9 @@ const PRESETS = [
        dex,
        COUNT(*) AS trade_count,
        ROUND(SUM(usd_value), 2) AS total_volume,
-       COUNT(DISTINCT trader_wallet) AS unique_wallets,
-       ROUND(AVG(usd_value), 2) AS avg_trade_size
+       ROUND(AVG(usd_value), 2) AS avg_trade_size,
+       SUM(CASE WHEN side='buy' THEN 1 ELSE 0 END) AS buys,
+       SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) AS sells
 FROM swap_transactions
 GROUP BY dex
 ORDER BY total_volume DESC`,
@@ -34,7 +35,7 @@ ORDER BY total_volume DESC`,
        p.dex,
        COUNT(*) AS tx_count,
        ROUND(SUM(t.usd_value), 2) AS volume,
-       COUNT(DISTINCT t.trader_wallet) AS traders
+       ROUND(AVG(t.usd_value), 2) AS avg_size
 FROM swap_transactions t
 JOIN pools p ON t.pool_address = p.address
 GROUP BY p.address, p.token_base_symbol,
