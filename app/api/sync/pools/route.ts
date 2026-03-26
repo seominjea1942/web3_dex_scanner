@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
+import { embedNewTokens } from "@/lib/search-kit";
 import {
   fetchTrendingSolanaPairs,
   fetchPairsFromDexScreener,
@@ -306,12 +307,21 @@ export async function GET(req: Request) {
       console.warn("Real event detection failed:", e);
     }
 
+    // 7. Auto-embed any new tokens that lack embeddings (for vector search)
+    let embeddedCount = 0;
+    try {
+      embeddedCount = await embedNewTokens(db);
+    } catch (e) {
+      console.warn("Auto-embed failed:", e);
+    }
+
     const duration = performance.now() - start;
 
     return NextResponse.json({
       synced: true,
       pairs_count: pairs.length,
       real_events: realEventsCount,
+      embedded_count: embeddedCount,
       duration_ms: Math.round(duration),
       source: "dexscreener",
     });

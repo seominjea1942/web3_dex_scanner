@@ -50,8 +50,9 @@ interface SearchBarProps {
 
 const PLACEHOLDER_HINTS = [
   "Search tokens, pools, or addresses...",
-  'Try "dog tokens" or "meme coins"...',
-  'Try "BONK" or "whale activity"...',
+  'Try "dog coins under $1"...',
+  'Try "meme tokens" or "BONK"...',
+  'Try "tokens up 30%" or "defi"...',
   "Paste a token address to find it...",
 ];
 
@@ -126,11 +127,14 @@ export function SearchBar({}: SearchBarProps) {
   const [trending, setTrending] = useState<TrendingData | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchEngine, setSearchEngine] = useState("");
+  const [searchStrategy, setSearchStrategy] = useState("");
   const [queryInterpreted, setQueryInterpreted] = useState<string | undefined>();
+  const [filtersApplied, setFiltersApplied] = useState<string[]>([]);
   const [queryTimeMs, setQueryTimeMs] = useState(0);
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
+  const [analyticsSort, setAnalyticsSort] = useState<string | null>(null);
   const searchTimer = useRef<NodeJS.Timeout>();
   const containerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -173,7 +177,10 @@ export function SearchBar({}: SearchBarProps) {
         setTokenResults(data.tokens || []);
         setEventResults(data.events || []);
         setSearchEngine(data.search_engine || "");
+        setSearchStrategy(data.search_strategy || "");
         setQueryInterpreted(data.query_interpreted);
+        setFiltersApplied(data.filters_applied || []);
+        setAnalyticsSort(null); // Reset sort on new query
         setQueryTimeMs(data.query_time_ms || 0);
         setShowDropdown(true);
       } catch {
@@ -207,6 +214,14 @@ export function SearchBar({}: SearchBarProps) {
   function handleSelectPool(pool: TokenResult) {
     setShowDropdown(false);
     setLocal("");
+    // Track click for popularity ranking (fire-and-forget)
+    if (pool.token_base_address) {
+      fetch("/api/search/click", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token_address: pool.token_base_address, query: local }),
+      }).catch(() => {});
+    }
     router.push(`/pool/${pool.address}`);
   }
 
@@ -220,6 +235,26 @@ export function SearchBar({}: SearchBarProps) {
   const hasQuery = local.length >= 2;
   const hasResults = tokenResults.length > 0 || eventResults.length > 0;
   const showTrending = !hasQuery && isFocused && trending;
+
+  // Apply client-side analytics sort to token results
+  const sortedTokenResults = (() => {
+    if (!analyticsSort || tokenResults.length === 0) return tokenResults;
+    const copy = [...tokenResults];
+    switch (analyticsSort) {
+      case "gainers":
+        return copy.sort((a, b) => (b.price_change_24h || 0) - (a.price_change_24h || 0));
+      case "volume":
+        return copy.sort((a, b) => (b.volume_24h || 0) - (a.volume_24h || 0));
+      case "hot":
+        return copy.sort((a, b) => {
+          const velA = (a.volume_24h || 0) > 0 ? ((a as any).volume_1h || a.volume_24h / 24) / (a.volume_24h / 24) : 0; // eslint-disable-line @typescript-eslint/no-explicit-any
+          const velB = (b.volume_24h || 0) > 0 ? ((b as any).volume_1h || b.volume_24h / 24) / (b.volume_24h / 24) : 0; // eslint-disable-line @typescript-eslint/no-explicit-any
+          return velB - velA;
+        });
+      default:
+        return copy;
+    }
+  })();
 
   /* ── Render ──────────────────────────────────────────── */
   return (
@@ -365,6 +400,33 @@ export function SearchBar({}: SearchBarProps) {
                   </div>
                 )}
 
+              {/* Active filters */}
+              {filtersApplied.length > 0 && (
+                <div
+                  className="px-4 py-2 border-b flex items-center gap-1.5 flex-wrap"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <span
+                    className="material-symbols-outlined"
+                    style={{ fontSize: 13, color: "var(--accent-orange)" }}
+                  >
+                    filter_alt
+                  </span>
+                  {filtersApplied.map((f, i) => (
+                    <span
+                      key={i}
+                      className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                      style={{
+                        background: "rgba(255, 141, 40, 0.12)",
+                        color: "var(--accent-orange)",
+                      }}
+                    >
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {/* Loading skeleton */}
               {loading && !hasResults ? (
                 <div className="px-4 py-3 flex flex-col gap-2.5">
@@ -393,15 +455,45 @@ export function SearchBar({}: SearchBarProps) {
                 <div
                   className="overflow-y-auto flex-1 min-h-0"
                 >
-                  {/* Token results */}
-                  {tokenResults.length > 0 && (
+                  {/* Token results with analytics sort chips */}
+                  {sortedTokenResults.length > 0 && (
                     <>
                       <SectionHeader
                         icon="token"
                         color="var(--accent-blue)"
-                        label={`Tokens (${tokenResults.length})`}
+                        label={`Tokens (${sortedTokenResults.length})`}
                       />
-                      {tokenResults.map((r) => (
+                      {/* Analytics sort chips */}
+                      {sortedTokenResults.length >= 3 && (
+                        <div className="px-3 py-1.5 flex gap-1.5 border-b" style={{ borderColor: "var(--border)" }}>
+                          {[
+                            { key: null, label: "Relevance", icon: "auto_awesome" },
+                            { key: "gainers", label: "Gainers", icon: "trending_up" },
+                            { key: "volume", label: "Volume", icon: "bar_chart" },
+                            { key: "hot", label: "Hot", icon: "local_fire_department" },
+                          ].map((chip) => {
+                            const active = analyticsSort === chip.key;
+                            return (
+                              <button
+                                key={chip.key ?? "relevance"}
+                                onClick={() => setAnalyticsSort(chip.key)}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-all"
+                                style={{
+                                  background: active ? "rgba(59, 130, 246, 0.15)" : "transparent",
+                                  color: active ? "var(--accent-blue)" : "var(--text-muted)",
+                                  border: `1px solid ${active ? "rgba(59, 130, 246, 0.3)" : "var(--border)"}`,
+                                }}
+                              >
+                                <span className="material-symbols-outlined" style={{ fontSize: 11 }}>
+                                  {chip.icon}
+                                </span>
+                                {chip.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {sortedTokenResults.map((r) => (
                         <TokenRow
                           key={r.address}
                           token={r}
@@ -435,6 +527,7 @@ export function SearchBar({}: SearchBarProps) {
               {hasResults && (
                 <Footer
                   engine={searchEngine}
+                  strategy={searchStrategy}
                   timeMs={queryTimeMs}
                 />
               )}
@@ -728,33 +821,74 @@ function EventRow({
   );
 }
 
+const ENGINE_CONFIG: Record<string, { icon: string; label: string; bg: string; color: string }> = {
+  fts: {
+    icon: "auto_awesome",
+    label: "TiDB Full-Text Search",
+    bg: "linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(219, 52, 242, 0.05))",
+    color: "var(--accent-blue)",
+  },
+  vector: {
+    icon: "neurology",
+    label: "TiDB Vector Search",
+    bg: "linear-gradient(135deg, rgba(139, 92, 246, 0.10), rgba(219, 52, 242, 0.06))",
+    color: "#8B5CF6",
+  },
+  hybrid: {
+    icon: "merge",
+    label: "TiDB Hybrid Search (FTS + Vector)",
+    bg: "linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08))",
+    color: "#6366F1",
+  },
+  exact: {
+    icon: "pin",
+    label: "TiDB Index Lookup",
+    bg: "linear-gradient(135deg, rgba(48, 209, 88, 0.08), rgba(99, 102, 241, 0.05))",
+    color: "var(--accent-green)",
+  },
+  prefix: {
+    icon: "text_fields",
+    label: "TiDB Prefix Search",
+    bg: "linear-gradient(135deg, rgba(48, 209, 88, 0.08), rgba(99, 102, 241, 0.05))",
+    color: "var(--accent-green)",
+  },
+  tiflash: {
+    icon: "speed",
+    label: "TiDB TiFlash Analytics",
+    bg: "linear-gradient(135deg, rgba(255, 141, 40, 0.10), rgba(255, 66, 89, 0.06))",
+    color: "var(--accent-orange)",
+  },
+};
+
 function Footer({
   engine,
+  strategy,
   timeMs,
   label,
 }: {
   engine: string;
+  strategy?: string;
   timeMs: number;
   label?: string;
 }) {
+  const config = ENGINE_CONFIG[engine] || ENGINE_CONFIG.fts;
+  const isAdvanced = engine !== "like_fallback" && engine !== "none";
+
   return (
     <div
       className="px-4 py-2.5 flex items-center justify-center gap-2 border-t"
       style={{
         borderColor: "var(--border)",
-        background:
-          engine === "tici"
-            ? "linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(219, 52, 242, 0.05))"
-            : "var(--bg-secondary)",
+        background: isAdvanced ? config.bg : "var(--bg-secondary)",
       }}
     >
-      {engine === "tici" ? (
+      {isAdvanced ? (
         <>
           <span
             className="material-symbols-outlined search-badge-sparkle"
-            style={{ fontSize: 14, color: "var(--accent-blue)" }}
+            style={{ fontSize: 14, color: config.color }}
           >
-            auto_awesome
+            {config.icon}
           </span>
           <span
             className="text-[11px] font-medium"
@@ -762,9 +896,20 @@ function Footer({
           >
             {label ? `${label} ` : ""}Powered by{" "}
             <span className="search-badge-gradient-text">
-              TiDB Full-Text Search
+              {config.label}
             </span>
           </span>
+          {strategy && strategy !== engine && (
+            <span
+              className="text-[9px] px-1.5 py-0.5 rounded"
+              style={{
+                background: `${config.color}15`,
+                color: config.color,
+              }}
+            >
+              {strategy}
+            </span>
+          )}
           {timeMs > 0 && (
             <>
               <span
