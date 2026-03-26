@@ -232,7 +232,7 @@ export default function PoolDetailPage() {
               >
                 {([
                   { key: "transactions", label: "Transactions" },
-                  { key: "similar", label: "Similar Patterns" },
+                  { key: "similar", label: "Correlated Tokens" },
                   { key: "liquidity", label: "Liquidity Pools" },
                   { key: "top-traders", label: "Top Traders" },
                 ] as const).map((tab) => (
@@ -299,7 +299,7 @@ export default function PoolDetailPage() {
             { key: "info", icon: "info", label: "Info" },
             { key: "chart", icon: "candlestick_chart", label: "Chart" },
             { key: "transactions", icon: "receipt_long", label: "Txns" },
-            { key: "similar", icon: "pattern", label: "Patterns" },
+            { key: "similar", icon: "hub", label: "Correlated" },
             { key: "liquidity", icon: "water_drop", label: "Pools" },
             { key: "top-traders", icon: "leaderboard", label: "Traders" },
           ] as const).map((item) => {

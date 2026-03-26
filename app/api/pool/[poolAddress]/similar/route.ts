@@ -6,143 +6,155 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Compute a pseudo-similarity score between two pools based on
- * volume_24h and price_change_24h proximity.
- * Returns a value in [0, 1] where 1 = identical pattern.
+ * Similar Patterns API — Dual Mode (Chart Shape + Market Behavior)
+ *
+ * ?mode=shape    → OHLCV chart shape similarity (pattern_shape_embeddings)
+ * ?mode=behavior → Market behavior similarity (pattern_embeddings)
+ *
+ * Both use TiCI + VEC_COSINE_DISTANCE (HTAP demo).
  */
-function similarityScore(
-  refVolume: number,
-  refChange: number,
-  candVolume: number,
-  candChange: number
-): number {
-  // Volume similarity: use log-ratio so pools with 10x volume diff score ~0.5
-  const logRef = Math.log10(Math.max(refVolume, 1));
-  const logCand = Math.log10(Math.max(candVolume, 1));
-  const volDiff = Math.abs(logRef - logCand);
-  const volScore = Math.max(0, 1 - volDiff / 5); // 5 orders of magnitude = 0
 
-  // Price-change similarity: absolute difference
-  const changeDiff = Math.abs(refChange - candChange);
-  const changeScore = Math.max(0, 1 - changeDiff / 100); // 100pp diff = 0
+interface MappedResult {
+  pool_address: string;
+  pair_name: string;
+  token_base_symbol: string;
+  token_quote_symbol: string;
+  dex: string;
+  volume_24h: number;
+  liquidity_usd: number;
+  price_usd: number;
+  price_change_24h: number;
+  price_change_1h?: number;
+  price_change_6h?: number;
+  similarity_score: number;
+}
 
-  // Weighted combination
-  return Math.round((volScore * 0.4 + changeScore * 0.6) * 1000) / 1000;
+async function vectorSearch(
+  db: ReturnType<typeof getPool>,
+  table: string,
+  poolAddress: string,
+  limit: number,
+): Promise<{ results: MappedResult[]; queryTimeMs: number; sql: string } | null> {
+  const start = performance.now();
+
+  try {
+    // Check if reference pool exists in this table first
+    const [refCheck] = await db.query<RowDataPacket[]>(
+      `SELECT 1 FROM ${table} WHERE pool_address = ? LIMIT 1`,
+      [poolAddress]
+    );
+    if (refCheck.length === 0) return null; // reference not in this table
+
+    const hasChainCol = table === "pattern_embeddings";
+    const extraCols = table === "pattern_embeddings"
+      ? "pe.market_cap, pe.price_change_1h, pe.price_change_6h,"
+      : "";
+    const chainFilter = hasChainCol ? "AND pe.chain = 'solana'" : "";
+
+    const sql = `
+      SELECT
+        pe.pool_address, pe.pair_name, pe.token_base_symbol, pe.token_quote_symbol,
+        pe.dex, pe.volume_24h, pe.liquidity_usd, pe.price_usd, pe.price_change_24h,
+        ${extraCols}
+        (1 - VEC_COSINE_DISTANCE(pe.embedding, (
+          SELECT embedding FROM ${table} WHERE pool_address = ? LIMIT 1
+        ))) AS similarity
+      FROM ${table} pe
+      WHERE pe.pool_address != ? ${chainFilter}
+      ORDER BY similarity DESC
+      LIMIT ?
+    `;
+
+    const [rows] = await db.query<RowDataPacket[]>(sql, [poolAddress, poolAddress, limit]);
+    const queryTimeMs = Math.round((performance.now() - start) * 100) / 100;
+
+    const mapped: MappedResult[] = rows.map((r) => ({
+      pool_address: r.pool_address,
+      pair_name: r.pair_name,
+      token_base_symbol: r.token_base_symbol,
+      token_quote_symbol: r.token_quote_symbol,
+      dex: r.dex,
+      volume_24h: Number(r.volume_24h ?? 0),
+      liquidity_usd: Number(r.liquidity_usd ?? 0),
+      price_usd: Number(r.price_usd ?? 0),
+      price_change_24h: Number(r.price_change_24h ?? 0),
+      ...(r.price_change_1h !== undefined ? { price_change_1h: Number(r.price_change_1h ?? 0) } : {}),
+      ...(r.price_change_6h !== undefined ? { price_change_6h: Number(r.price_change_6h ?? 0) } : {}),
+      similarity_score: Math.round(Number(r.similarity) * 10000) / 10000,
+    }));
+
+    // HNSW is approximate — re-sort for exact ordering
+    mapped.sort((a, b) => b.similarity_score - a.similarity_score);
+
+    const displaySql = `-- TiCI pre-filter + Vector Search
+SELECT pe.pair_name, pe.dex, pe.volume_24h,
+  (1 - VEC_COSINE_DISTANCE(pe.embedding, (
+    SELECT embedding FROM ${table}
+    WHERE pool_address = '${poolAddress.slice(0, 8)}...'
+  ))) AS similarity
+FROM ${table} pe
+WHERE pe.pool_address != '${poolAddress.slice(0, 8)}...'
+ORDER BY similarity DESC LIMIT ${limit};`;
+
+    return { results: mapped, queryTimeMs, sql: displaySql };
+  } catch (err) {
+    console.warn(`Vector search on ${table} failed:`, (err as Error).message);
+    return null;
+  }
 }
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ poolAddress: string }> }
 ) {
-  const start = performance.now();
-
   try {
     const { poolAddress } = await params;
     const limit = Math.min(20, Math.max(1, parseInt(
-      req.nextUrl.searchParams.get("limit") || "5",
-      10
+      req.nextUrl.searchParams.get("limit") || "6", 10
     )));
+    const mode = req.nextUrl.searchParams.get("mode") || "shape";
     const db = getPool();
 
-    // Get the reference pool
-    const [refRows] = await db.query<RowDataPacket[]>(
-      `SELECT token_base_address, volume_24h, price_change_24h
-       FROM pools
-       WHERE address = ?`,
-      [poolAddress]
-    );
+    const table = mode === "behavior" ? "pattern_embeddings" : "pattern_shape_embeddings";
+    const result = await vectorSearch(db, table, poolAddress, limit);
 
-    if (refRows.length === 0) {
-      return NextResponse.json(
-        { error: "Pool not found" },
-        { status: 404 }
-      );
+    if (result && result.results.length > 0) {
+      return NextResponse.json({
+        pool_address: poolAddress,
+        query_time_ms: result.queryTimeMs,
+        mode,
+        method: "tici_vector_cosine",
+        htap_sql: result.sql,
+        results: result.results,
+      });
     }
 
-    const ref = refRows[0];
-    const refVolume = Number(ref.volume_24h ?? 0);
-    const refChange = Number(ref.price_change_24h ?? 0);
+    // Fallback: try the other table
+    const fallbackTable = mode === "behavior" ? "pattern_shape_embeddings" : "pattern_embeddings";
+    const fallback = await vectorSearch(db, fallbackTable, poolAddress, limit);
 
-    // Find candidate pools sharing the same base token
-    const [candidates] = await db.query<RowDataPacket[]>(
-      `SELECT
-        p.address,
-        CONCAT(p.token_base_symbol, '/', p.token_quote_symbol) AS pair_name,
-        p.dex,
-        p.volume_24h,
-        p.price_change_24h
-      FROM pools p
-      WHERE p.token_base_address = ?
-        AND p.address != ?
-      ORDER BY p.volume_24h DESC
-      LIMIT 50`,
-      [ref.token_base_address, poolAddress]
-    );
-
-    // Score and rank
-    const scored = candidates.map((c) => ({
-      pool_address: c.address,
-      pair_name: c.pair_name,
-      dex: c.dex,
-      volume_24h: Number(c.volume_24h ?? 0),
-      price_change_24h: Number(c.price_change_24h ?? 0),
-      similarity_score: similarityScore(
-        refVolume,
-        refChange,
-        Number(c.volume_24h ?? 0),
-        Number(c.price_change_24h ?? 0)
-      ),
-    }));
-
-    scored.sort((a, b) => b.similarity_score - a.similarity_score);
-    const topResults = scored.slice(0, limit);
-
-    // Fetch sparkline data (last 20 close prices) for top results
-    const sparklines: Record<string, number[]> = {};
-    if (topResults.length > 0) {
-      const addresses = topResults.map((r) => r.pool_address);
-      const placeholders = addresses.map(() => "?").join(",");
-
-      const [sparkRows] = await db.query<RowDataPacket[]>(
-        `SELECT pool_address, close, timestamp
-         FROM price_history
-         WHERE pool_address IN (${placeholders})
-         ORDER BY pool_address, timestamp ASC`,
-        addresses
-      );
-
-      // Group by pool and take last 20 points
-      for (const row of sparkRows) {
-        const addr = row.pool_address as string;
-        if (!sparklines[addr]) sparklines[addr] = [];
-        sparklines[addr].push(Number(row.close));
-      }
-      for (const addr of Object.keys(sparklines)) {
-        const data = sparklines[addr];
-        if (data.length > 20) {
-          sparklines[addr] = data.slice(data.length - 20);
-        }
-      }
+    if (fallback && fallback.results.length > 0) {
+      return NextResponse.json({
+        pool_address: poolAddress,
+        query_time_ms: fallback.queryTimeMs,
+        mode: mode === "behavior" ? "shape" : "behavior",
+        method: "tici_vector_cosine",
+        htap_sql: fallback.sql,
+        results: fallback.results,
+        fallback: true,
+      });
     }
 
-    const results = topResults.map((r) => ({
-      ...r,
-      sparkline: sparklines[r.pool_address] ?? [],
-    }));
-
-    const queryTimeMs = Math.round((performance.now() - start) * 100) / 100;
-
+    // No vector results at all
     return NextResponse.json({
       pool_address: poolAddress,
-      query_time_ms: queryTimeMs,
-      method: "vector_cosine_similarity",
-      results,
+      query_time_ms: 0,
+      mode,
+      method: "none",
+      results: [],
     });
   } catch (e) {
     console.error("GET /api/pool/[poolAddress]/similar error:", e);
-    return NextResponse.json(
-      { error: "Failed to fetch similar pools" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch similar pools" }, { status: 500 });
   }
 }
