@@ -120,7 +120,6 @@ export async function GET(req: NextRequest) {
         filters_applied: ["comparison"],
         query_time_ms: queryTimeMs,
       };
-      setCache(cacheKey, response);
       return NextResponse.json(response);
     }
 
