@@ -138,23 +138,26 @@ export async function GET(req: NextRequest) {
         tokens = await searchByAddress(db, q);
         break;
 
-      case "exact_symbol":
-        tokens = await searchExactSymbol(db, q);
-        // Fuzzy fallback: "BONKK" → find BONK via Levenshtein
+      case "exact_symbol": {
+        // Try exact symbol match + FTS in parallel — merge results
+        const [exactHits, ftsResult] = await Promise.all([
+          searchExactSymbol(db, q),
+          searchFTS(db, q),
+        ]);
+        // Exact matches first, then FTS results (name matches like "Official Trump")
+        tokens = [...exactHits, ...ftsResult.tokens];
+        tokens = deduplicateByToken(tokens);
+        // Fuzzy fallback if still empty: "BONKK" → BONK via Levenshtein
         if (tokens.length === 0) {
           const fuzzyHits = fuzzyMatchSymbol(q);
           if (fuzzyHits.length > 0) {
             const fuzzyAddrs = fuzzyHits.map((h) => h.address);
             tokens = await searchByTokenAddresses(db, fuzzyAddrs);
-            usedVector = false; // Mark as fuzzy
+            usedVector = false;
           }
         }
-        // Still empty? Try vector search
-        if (tokens.length === 0) {
-          tokens = await searchVector(db, q);
-          usedVector = tokens.length > 0;
-        }
         break;
+      }
 
       case "prefix":
         tokens = await searchPrefix(db, q);
