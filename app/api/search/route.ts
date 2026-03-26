@@ -31,8 +31,11 @@ export async function GET(req: NextRequest) {
 
   // ── FTS path ──────────────────────────────────────────────
   try {
-    // Round 1: parallel FTS on symbols, token names, and event descriptions
-    const [symbolRows, nameRows, eventRows] = await Promise.all([
+    // Round 1: parallel FTS + LIKE prefix on symbols, token names, and event descriptions
+    const upperTerms = searchTerms.toUpperCase();
+    const likePrefix = `${upperTerms}%`;
+    const likeWild = `%${searchTerms}%`;
+    const [symbolRows, nameRows, eventRows, prefixSymbolRows, prefixNameRows] = await Promise.all([
       db.query<RowDataPacket[]>(
         `SELECT
           p.address, p.token_base_symbol, p.token_quote_symbol,
@@ -71,25 +74,55 @@ export async function GET(req: NextRequest) {
           [searchTerms, searchTerms, searchTerms]
         )
         .catch(() => [[] as RowDataPacket[]]), // graceful if no FTS index on events
+      // LIKE prefix fallback for partial symbol matches (e.g. "CAP" → "CAPTCHA")
+      db.query<RowDataPacket[]>(
+        `SELECT
+          p.address, p.token_base_symbol, p.token_quote_symbol,
+          p.token_base_address, p.price_usd, p.volume_24h,
+          p.price_change_24h, p.dex, p.pool_created_at,
+          p.txns_24h_buys, p.txns_24h_sells,
+          0.5 AS relevance
+        FROM pools p
+        WHERE UPPER(p.token_base_symbol) LIKE ?
+           OR p.address LIKE ?
+           OR p.token_base_address LIKE ?
+        ORDER BY p.volume_24h DESC
+        LIMIT 20`,
+        [likePrefix, likeWild, likeWild]
+      ),
+      db.query<RowDataPacket[]>(
+        `SELECT
+          t.address AS token_address, t.name AS token_name, t.logo_url,
+          0.5 AS relevance
+        FROM tokens t
+        WHERE LOWER(t.name) LIKE ? OR UPPER(t.symbol) LIKE ?
+        ORDER BY t.symbol
+        LIMIT 20`,
+        [likeWild, likePrefix]
+      ),
     ]);
 
-    // Build token lookup from name-matched results
+    // Build token lookup from name-matched results (FTS + LIKE prefix)
     const tokenMap = new Map<
       string,
       { name: string; logo_url: string | null; relevance: number }
     >();
-    for (const t of nameRows[0]) {
-      tokenMap.set(t.token_address, {
-        name: t.token_name,
-        logo_url: t.logo_url,
-        relevance: Number(t.relevance),
-      });
+    for (const t of [...nameRows[0], ...prefixNameRows[0]]) {
+      const existing = tokenMap.get(t.token_address);
+      if (!existing || Number(t.relevance) > existing.relevance) {
+        tokenMap.set(t.token_address, {
+          name: t.token_name,
+          logo_url: t.logo_url,
+          relevance: Number(t.relevance),
+        });
+      }
     }
 
     // Merge & deduplicate pools by token_base_address (keep highest-volume)
+    // Combines FTS symbol matches + LIKE prefix matches
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const byToken = new Map<string, Record<string, any>>();
-    for (const r of symbolRows[0]) {
+    for (const r of [...symbolRows[0], ...prefixSymbolRows[0]]) {
       const tokenInfo = tokenMap.get(r.token_base_address);
       const entry: Record<string, any> = {  // eslint-disable-line @typescript-eslint/no-explicit-any
         ...r,
@@ -233,6 +266,8 @@ export async function GET(req: NextRequest) {
     console.error("[search] FTS failed, using LIKE fallback:", ftsErr);
     // ── LIKE fallback ─────────────────────────────────────────
     const like = `%${q}%`;
+    const upperLike = `%${q.toUpperCase()}%`;
+    const lowerLike = `%${q.toLowerCase()}%`;
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT
         p.address, p.token_base_symbol, p.token_quote_symbol,
@@ -242,13 +277,13 @@ export async function GET(req: NextRequest) {
         t.logo_url, t.name AS token_name
        FROM pools p
        LEFT JOIN tokens t ON p.token_base_address = t.address
-       WHERE p.token_base_symbol LIKE ?
-          OR t.name LIKE ?
+       WHERE UPPER(p.token_base_symbol) LIKE ?
+          OR LOWER(t.name) LIKE ?
           OR p.token_base_address LIKE ?
           OR p.address LIKE ?
        ORDER BY p.volume_24h DESC
        LIMIT 10`,
-      [like, like, like, like]
+      [upperLike, lowerLike, like, like]
     );
 
     const queryTimeMs = Math.round(performance.now() - start);
