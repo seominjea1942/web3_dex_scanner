@@ -136,6 +136,7 @@ export function SearchBar({}: SearchBarProps) {
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
   const [analyticsSort, setAnalyticsSort] = useState<string | null>(null);
   const searchTimer = useRef<NodeJS.Timeout>();
+  const abortRef = useRef<AbortController>();
   const containerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -162,6 +163,8 @@ export function SearchBar({}: SearchBarProps) {
   /* ── Debounced search API call ───────────────────────── */
   const fetchResults = useCallback((query: string) => {
     clearTimeout(searchTimer.current);
+    // Abort any in-flight request so it doesn't hold DB connections
+    abortRef.current?.abort();
     if (query.length < 2) {
       setTokenResults([]);
       setEventResults([]);
@@ -169,9 +172,12 @@ export function SearchBar({}: SearchBarProps) {
     }
     setLoading(true);
     searchTimer.current = setTimeout(async () => {
+      const controller = new AbortController();
+      abortRef.current = controller;
       try {
         const res = await fetch(
-          `/api/search?q=${encodeURIComponent(query)}`
+          `/api/search?q=${encodeURIComponent(query)}`,
+          { signal: controller.signal }
         );
         const data = await res.json();
         setTokenResults(data.tokens || []);
@@ -183,7 +189,8 @@ export function SearchBar({}: SearchBarProps) {
         setAnalyticsSort(null); // Reset sort on new query
         setQueryTimeMs(data.query_time_ms || 0);
         setShowDropdown(true);
-      } catch {
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return; // cancelled, ignore
         setTokenResults([]);
         setEventResults([]);
       } finally {
