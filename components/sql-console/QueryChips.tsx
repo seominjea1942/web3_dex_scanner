@@ -12,7 +12,8 @@ const PRESETS = [
     color: "var(--accent-green)",
     tooltip: "TiFlash columnar engine: full-table aggregation on 500K rows — no pre-computation",
     description: "Compare total trading volume across exchanges. See which DEX handles the most trades and money.",
-    sql: `SELECT dex,
+    sql: `SELECT /*+ READ_FROM_STORAGE(TIFLASH[swap_transactions]) */
+       dex,
        COUNT(*) AS trade_count,
        ROUND(SUM(usd_value), 2) AS total_volume,
        COUNT(DISTINCT trader_wallet) AS unique_wallets,
@@ -28,7 +29,8 @@ ORDER BY total_volume DESC`,
     color: "var(--accent-orange)",
     tooltip: "Distributed JOIN: swap_transactions × pools, GROUP BY + HAVING across shards",
     description: "Find which token pairs have the most trading activity right now. Great for discovering trending tokens early.",
-    sql: `SELECT p.token_base_symbol, p.token_quote_symbol,
+    sql: `SELECT /*+ READ_FROM_STORAGE(TIFLASH[t]) */
+       p.token_base_symbol, p.token_quote_symbol,
        p.dex,
        COUNT(*) AS tx_count,
        ROUND(SUM(t.usd_value), 2) AS volume,
@@ -101,15 +103,46 @@ WHERE description LIKE '%whale%'
 ORDER BY timestamp DESC
 LIMIT 20`,
   },
-  // ── Tier 3: Standard queries ──
+  // ── Tier 3: TiCI Vector Search demos ──
+  {
+    id: "similar_tokens",
+    label: "similar tokens",
+    icon: "hub",
+    color: "var(--accent-blue)",
+    tooltip: "TiCI Vector Search: find tokens with similar market behavior using VEC_COSINE_DISTANCE on 32-dim embeddings",
+    description: "Find pools that trade like SOL/USDC — same volume pattern, momentum, and buy/sell pressure. Powered by TiDB vector index (HNSW).",
+    sql: `-- TiCI: Find pools with similar market behavior to SOL/USDC
+-- Uses 32-dim embeddings (volume, momentum, txn ratios)
+SELECT
+  pe.pair_name,
+  pe.dex,
+  ROUND(pe.volume_24h, 2) AS volume_24h,
+  ROUND(pe.price_change_24h, 2) AS change_24h,
+  ROUND(
+    (1 - VEC_COSINE_DISTANCE(pe.embedding, (
+      SELECT embedding FROM pattern_embeddings
+      WHERE token_base_symbol = 'SOL'
+      ORDER BY volume_24h DESC LIMIT 1
+    ))) * 100, 2
+  ) AS similarity_pct
+FROM pattern_embeddings pe
+WHERE pe.token_base_symbol != 'SOL'
+ORDER BY VEC_COSINE_DISTANCE(pe.embedding, (
+  SELECT embedding FROM pattern_embeddings
+  WHERE token_base_symbol = 'SOL'
+  ORDER BY volume_24h DESC LIMIT 1
+))
+LIMIT 15`,
+  },
   {
     id: "whale",
     label: "whale trades",
     icon: "waves",
-    color: "var(--accent-blue)",
+    color: "var(--accent-orange)",
     tooltip: "HTAP: query live transactional data with no ETL — 500K rows, instant results",
     description: "Find the biggest trades over $5K. Useful for spotting when large wallets are buying or selling.",
-    sql: `SELECT signature, trader_wallet,
+    sql: `SELECT /*+ READ_FROM_STORAGE(TIFLASH[swap_transactions]) */
+       signature, trader_wallet,
        ROUND(usd_value, 2) AS usd_value,
        side, dex,
        FROM_UNIXTIME(timestamp / 1000) AS trade_time
