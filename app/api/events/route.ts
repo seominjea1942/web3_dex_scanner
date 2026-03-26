@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
+import { cache } from "@/lib/cache";
 import type { RowDataPacket, Pool as MysqlPool } from "mysql2/promise";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const EVENT_CACHE_TTL = 5_000; // 5s — events update frequently
 
 // Map frontend event type filters to v2 schema event_type values
 const EVENT_TYPE_MAP: Record<string, string[]> = {
@@ -144,18 +147,27 @@ export async function GET(req: NextRequest) {
       queryParams.push(minAmount);
     }
 
-    // v2: alias columns to old names for frontend compatibility
-    const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT *,
-        FROM_UNIXTIME(timestamp / 1000) as created_at,
-        trader_wallet as wallet_address,
-        usd_value as amount_usd,
-        dex as dex_name,
-        (UNIX_TIMESTAMP() - timestamp / 1000) as seconds_ago,
-        pool_address,
-        severity
-       FROM defi_events ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
-      [...queryParams, limit, offset]
+    // Cache key based on query parameters
+    const cacheKey = `events:${type || "all"}:${limit}:${offset}:${minAmount}`;
+
+    const { data: rows } = await cache.getOrFetch(
+      cacheKey,
+      async () => {
+        const [result] = await db.query<RowDataPacket[]>(
+          `SELECT *,
+            FROM_UNIXTIME(timestamp / 1000) as created_at,
+            trader_wallet as wallet_address,
+            usd_value as amount_usd,
+            dex as dex_name,
+            (UNIX_TIMESTAMP() - timestamp / 1000) as seconds_ago,
+            pool_address,
+            severity
+           FROM defi_events ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+          [...queryParams, limit, offset]
+        );
+        return result;
+      },
+      EVENT_CACHE_TTL
     );
 
     return NextResponse.json({ events: rows });

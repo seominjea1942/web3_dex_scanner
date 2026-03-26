@@ -72,8 +72,8 @@ export function classifyQuery(query: string): QueryIntent {
     return "prefix";
   }
 
-  // Single uppercase word 4-10 chars → likely a full symbol
-  if (words.length === 1 && trimmed === trimmed.toUpperCase() && trimmed.length <= 10) {
+  // Single word 4-10 chars → likely a full symbol (case-insensitive for fuzzy)
+  if (words.length === 1 && /^[A-Za-z]{4,10}$/.test(trimmed)) {
     return "exact_symbol";
   }
 

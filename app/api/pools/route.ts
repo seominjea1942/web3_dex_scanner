@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
+import { cache } from "@/lib/cache";
 import type { RowDataPacket } from "mysql2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const POOL_CACHE_TTL = 10_000; // 10s — SWR refreshes in background
 
 // Lazy pool sync: trigger /api/sync/pools when data is stale (>5 min)
 const lazySyncPools = async (req: NextRequest) => {
@@ -81,51 +84,60 @@ export async function GET(req: NextRequest) {
       where += " AND p.price_change_24h < 0";
     }
 
-    // Count query
-    const [countRows] = await db.query<Array<{ total: number } & RowDataPacket>>(
-      `SELECT COUNT(*) as total FROM pools p
-       LEFT JOIN tokens t_base ON p.token_base_address = t_base.address
-       ${where}`,
-      queryParams
-    );
-    const total = countRows[0]?.total ?? 0;
+    // Cache key based on all query parameters
+    const cacheKey = `pools:${effectiveSort}:${effectiveOrder}:${search}:${filter}:${page}:${limit}`;
 
-    // Data query - alias v2 columns to old names so frontend doesn't break
-    const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT
-        p.address as id,
-        p.token_base_address as token_base_id,
-        p.token_quote_address as token_quote_id,
-        CONCAT(p.token_base_symbol, '/', p.token_quote_symbol) as pair_label,
-        p.dex as dex_name,
-        'AMM' as pool_type,
-        'solana' as chain,
-        (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as makers,
-        (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as txns_24h,
-        p.last_updated as updated_at,
-        p.price_usd,
-        p.price_change_5m,
-        p.price_change_1h,
-        p.price_change_6h,
-        p.price_change_24h,
-        p.volume_24h,
-        COALESCE(p.volume_1h, 0) as volume_1h,
-        p.liquidity_usd,
-        p.market_cap,
-        p.pool_created_at,
-        t_base.logo_url as base_logo_url,
-        t_base.name as base_name,
-        t_base.symbol as base_symbol,
-        t_quote.logo_url as quote_logo_url,
-        t_quote.symbol as quote_symbol
-       FROM pools p
-       LEFT JOIN tokens t_base ON p.token_base_address = t_base.address
-       LEFT JOIN tokens t_quote ON p.token_quote_address = t_quote.address
-       ${where}
-       ORDER BY ${sortCol} ${effectiveOrder}
-       LIMIT ? OFFSET ?`,
-      [...queryParams, limit, offset]
-    );
+    const fetcher = async () => {
+      // Run count + data queries in parallel (saves ~180ms RTT)
+      const [countResult, dataResult] = await Promise.all([
+        db.query<Array<{ total: number } & RowDataPacket>>(
+          `SELECT COUNT(*) as total FROM pools p
+           LEFT JOIN tokens t_base ON p.token_base_address = t_base.address
+           ${where}`,
+          queryParams
+        ),
+        db.query<RowDataPacket[]>(
+          `SELECT
+            p.address as id,
+            p.token_base_address as token_base_id,
+            p.token_quote_address as token_quote_id,
+            CONCAT(p.token_base_symbol, '/', p.token_quote_symbol) as pair_label,
+            p.dex as dex_name,
+            'AMM' as pool_type,
+            'solana' as chain,
+            (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as makers,
+            (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as txns_24h,
+            p.last_updated as updated_at,
+            p.price_usd,
+            p.price_change_5m,
+            p.price_change_1h,
+            p.price_change_6h,
+            p.price_change_24h,
+            p.volume_24h,
+            COALESCE(p.volume_1h, 0) as volume_1h,
+            p.liquidity_usd,
+            p.market_cap,
+            p.pool_created_at,
+            t_base.logo_url as base_logo_url,
+            t_base.name as base_name,
+            t_base.symbol as base_symbol,
+            t_quote.logo_url as quote_logo_url,
+            t_quote.symbol as quote_symbol
+           FROM pools p
+           LEFT JOIN tokens t_base ON p.token_base_address = t_base.address
+           LEFT JOIN tokens t_quote ON p.token_quote_address = t_quote.address
+           ${where}
+           ORDER BY ${sortCol} ${effectiveOrder}
+           LIMIT ? OFFSET ?`,
+          [...queryParams, limit, offset]
+        ),
+      ]);
+      return { countRows: countResult[0], rows: dataResult[0] };
+    };
+
+    const { data: dbResult } = await cache.getOrFetch(cacheKey, fetcher, POOL_CACHE_TTL);
+    const total = dbResult.countRows[0]?.total ?? 0;
+    const rows = dbResult.rows;
 
     // Apply live jitter to simulate real-time ticks
     const pools = rows.map((row) => {

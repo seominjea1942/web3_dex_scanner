@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool, withTiKV, withTiFlash } from "@/lib/db";
+import { cache } from "@/lib/cache";
 import {
   classifyQuery,
   getQueryEmbedding,
@@ -22,25 +23,15 @@ type DB = Pool | PoolConnection;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/* ── Response Cache ─────────────────────────────────────── */
-const CACHE_TTL_MS = 30_000; // 30 seconds
-const CACHE_MAX = 200;
-interface CachedResponse { data: any; ts: number } // eslint-disable-line @typescript-eslint/no-explicit-any
-const responseCache = new Map<string, CachedResponse>();
+/* ── Response Cache (SWR via lib/cache) ────────────────── */
+const SEARCH_CACHE_TTL = 30_000; // 30s — same as before but with SWR
 
-function getCached(key: string): any | null { // eslint-disable-line @typescript-eslint/no-explicit-any
-  const entry = responseCache.get(key);
-  if (entry && Date.now() - entry.ts < CACHE_TTL_MS) return entry.data;
-  if (entry) responseCache.delete(key);
-  return null;
-}
-
+// Legacy helpers kept for filter-only skip logic
 function setCache(key: string, data: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (responseCache.size >= CACHE_MAX) {
-    const oldest = responseCache.keys().next().value;
-    if (oldest !== undefined) responseCache.delete(oldest);
-  }
-  responseCache.set(key, { data, ts: Date.now() });
+  cache.set(key, data, SEARCH_CACHE_TTL);
+}
+function getCached(key: string): any | null { // eslint-disable-line @typescript-eslint/no-explicit-any
+  return cache.get(key);
 }
 
 const STOP_WORDS = new Set([
@@ -81,13 +72,14 @@ export async function GET(req: NextRequest) {
   const start = performance.now();
 
   // Refresh symbol cache for fuzzy matching (lazy, every 5 min)
+  // Must await if cache is empty — fuzzy match needs symbols loaded
   if (isSymbolCacheStale()) {
-    withTiKV(async (conn) => {
-      const [rows] = await conn.query<RowDataPacket[]>(
+    try {
+      const [rows] = await db.query<RowDataPacket[]>(
         "SELECT DISTINCT token_base_symbol AS symbol, token_base_address AS address FROM pools"
       );
-      setSymbolCache(rows.map((r) => ({ symbol: r.symbol, address: r.address })));
-    }).catch(() => {}); // fire-and-forget, non-blocking
+      setSymbolCache(rows.map((r: any) => ({ symbol: r.symbol, address: r.address })));
+    } catch { /* non-critical */ }
   }
 
   // Parse natural language filters from query: "dog coins under $1" → search "dog coins" + filter price ≤ $1
@@ -121,8 +113,8 @@ export async function GET(req: NextRequest) {
     // Handle "vs" comparison queries
     if (comparison) {
       const [leftResults, rightResults] = await Promise.all([
-        withTiKV((conn) => searchExactSymbol(conn, comparison.left)),
-        withTiKV((conn) => searchExactSymbol(conn, comparison.right)),
+        searchExactSymbol(db, comparison.left),
+        searchExactSymbol(db, comparison.right),
       ]);
       // If exact symbol didn't find results, try FTS
       const left = leftResults.length > 0 ? leftResults : (await searchFTS(db, comparison.left)).tokens;
@@ -134,7 +126,7 @@ export async function GET(req: NextRequest) {
 
       tokens = [...left.slice(0, 5), ...right.slice(0, 5)];
       tokens = deduplicateByToken(tokens);
-      tokens = await withTiKV((conn) => enrichTokens(conn, tokens));
+      tokens = await enrichTokens(db, tokens);
 
       const queryTimeMs = Math.round(performance.now() - start);
       const response = {
@@ -154,27 +146,25 @@ export async function GET(req: NextRequest) {
     // Filter-only queries: use TiFlash columnar engine for analytics scans
     const filterOpts = { dex: dexFilter, dexExclude, timeFilterHours, sortDirective };
     if (isFilterOnly) {
-      tokens = await withTiFlash((conn) => searchFilterOnly(conn, filters, filterOpts)).catch(
-        // Fallback to TiKV if TiFlash unavailable
-        () => withTiKV((conn) => searchFilterOnly(conn, filters, filterOpts))
-      );
+      // TiDB optimizer auto-routes to TiFlash for full scans; no need for withTiFlash wrapper
+      tokens = await searchFilterOnly(db, filters, filterOpts);
     } else
 
-    // address/exact_symbol/prefix use TiKV (B-tree indexes) to avoid TiFlash sync issues
-    // fts/semantic/hybrid use pool directly (FTS + Vector both need TiFlash)
+    // All search strategies use the pool directly — TiDB optimizer picks TiKV/TiFlash automatically.
+    // Removing withTiKV wrappers saves 2 RTT (SET SESSION + RESET) per call.
     switch (intent) {
       case "address":
-        tokens = await withTiKV((conn) => searchByAddress(conn, q));
+        tokens = await searchByAddress(db, q);
         break;
 
       case "exact_symbol":
-        tokens = await withTiKV((conn) => searchExactSymbol(conn, q));
+        tokens = await searchExactSymbol(db, q);
         // Fuzzy fallback: "BONKK" → find BONK via Levenshtein
         if (tokens.length === 0) {
           const fuzzyHits = fuzzyMatchSymbol(q);
           if (fuzzyHits.length > 0) {
             const fuzzyAddrs = fuzzyHits.map((h) => h.address);
-            tokens = await withTiKV((conn) => searchByTokenAddresses(conn, fuzzyAddrs));
+            tokens = await searchByTokenAddresses(db, fuzzyAddrs);
             usedVector = false; // Mark as fuzzy
           }
         }
@@ -186,13 +176,13 @@ export async function GET(req: NextRequest) {
         break;
 
       case "prefix":
-        tokens = await withTiKV((conn) => searchPrefix(conn, q));
+        tokens = await searchPrefix(db, q);
         // Fuzzy fallback for short typos
         if (tokens.length === 0) {
           const fuzzyHits = fuzzyMatchSymbol(q, 1); // stricter for short prefixes
           if (fuzzyHits.length > 0) {
             const fuzzyAddrs = fuzzyHits.map((h) => h.address);
-            tokens = await withTiKV((conn) => searchByTokenAddresses(conn, fuzzyAddrs));
+            tokens = await searchByTokenAddresses(db, fuzzyAddrs);
           }
         }
         break;
@@ -265,8 +255,9 @@ export async function GET(req: NextRequest) {
     // Deduplicate: keep only the best pool per unique token
     tokens = deduplicateByToken(tokens);
 
-    // Enrich with safety + whale + stats data BEFORE filters (safety filters need enriched data)
-    tokens = await withTiKV((conn) => enrichTokens(conn, tokens));
+    // Enrich with safety + whale + stats data BEFORE filters
+    // Use pool directly instead of withTiKV to avoid extra SET SESSION round-trip (~180ms saved)
+    tokens = await enrichTokens(db, tokens);
 
     // Apply parsed numeric filters (e.g., "under $1" → price_usd <= 1)
     if (filters.length > 0) {

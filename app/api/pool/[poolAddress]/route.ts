@@ -15,45 +15,57 @@ export async function GET(
     const { poolAddress } = await params;
     const db = getPool();
 
-    // Main pool query with token joins and holder count
-    const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT
-        p.address AS pool_address,
-        p.dex,
-        p.price_usd,
-        p.price_change_1h,
-        p.price_change_6h,
-        p.price_change_24h,
-        p.market_cap,
-        p.volume_24h,
-        p.liquidity_usd,
-        p.pool_created_at,
-        p.last_updated,
-        p.token_base_address,
-        p.token_base_symbol,
-        p.token_quote_address,
-        p.token_quote_symbol,
-        p.volume_5m,
-        p.volume_1h,
-        p.volume_6h,
-        p.txns_5m_buys,
-        p.txns_5m_sells,
-        p.txns_1h_buys,
-        p.txns_1h_sells,
-        p.txns_24h_buys,
-        p.txns_24h_sells,
-        t_base.name   AS base_name,
-        t_base.logo_url AS base_logo_url,
-        t_quote.name  AS quote_name,
-        t_quote.logo_url AS quote_logo_url,
-        ts.holder_count
-      FROM pools p
-      LEFT JOIN tokens t_base  ON p.token_base_address  = t_base.address
-      LEFT JOIN tokens t_quote ON p.token_quote_address = t_quote.address
-      LEFT JOIN token_safety ts ON p.token_base_address  = ts.token_address
-      WHERE p.address = ?`,
-      [poolAddress]
-    );
+    // Run both queries in parallel (was sequential — saves ~180ms RTT)
+    const [poolResult, eventResult] = await Promise.all([
+      db.query<RowDataPacket[]>(
+        `SELECT
+          p.address AS pool_address,
+          p.dex,
+          p.price_usd,
+          p.price_change_1h,
+          p.price_change_6h,
+          p.price_change_24h,
+          p.market_cap,
+          p.volume_24h,
+          p.liquidity_usd,
+          p.pool_created_at,
+          p.last_updated,
+          p.token_base_address,
+          p.token_base_symbol,
+          p.token_quote_address,
+          p.token_quote_symbol,
+          p.volume_5m,
+          p.volume_1h,
+          p.volume_6h,
+          p.txns_5m_buys,
+          p.txns_5m_sells,
+          p.txns_1h_buys,
+          p.txns_1h_sells,
+          p.txns_24h_buys,
+          p.txns_24h_sells,
+          t_base.name   AS base_name,
+          t_base.logo_url AS base_logo_url,
+          t_quote.name  AS quote_name,
+          t_quote.logo_url AS quote_logo_url,
+          ts.holder_count
+        FROM pools p
+        LEFT JOIN tokens t_base  ON p.token_base_address  = t_base.address
+        LEFT JOIN tokens t_quote ON p.token_quote_address = t_quote.address
+        LEFT JOIN token_safety ts ON p.token_base_address  = ts.token_address
+        WHERE p.address = ?`,
+        [poolAddress]
+      ),
+      db.query<Array<{ cnt: number } & RowDataPacket>>(
+        `SELECT COUNT(*) AS cnt
+         FROM defi_events
+         WHERE pool_address = ?
+           AND timestamp >= (UNIX_TIMESTAMP() * 1000 - 86400000)`,
+        [poolAddress]
+      ),
+    ]);
+
+    const [rows] = poolResult;
+    const [eventRows] = eventResult;
 
     if (rows.length === 0) {
       return NextResponse.json(
@@ -63,16 +75,6 @@ export async function GET(
     }
 
     const pool = rows[0];
-
-    // Count events in the last 24 hours
-    const [eventRows] = await db.query<Array<{ cnt: number } & RowDataPacket>>(
-      `SELECT COUNT(*) AS cnt
-       FROM defi_events
-       WHERE pool_address = ?
-         AND timestamp >= (UNIX_TIMESTAMP() * 1000 - 86400000)`,
-      [poolAddress]
-    );
-
     const events24h = eventRows[0]?.cnt ?? 0;
     const queryTimeMs = Math.round((performance.now() - start) * 100) / 100;
 
