@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
+import { SharedEventsProvider } from "@/hooks/useSharedEvents";
+import { SharedMetricsProvider } from "@/hooks/useSharedMetrics";
 import { Navbar } from "@/components/layout/Navbar";
 import { Banner } from "@/components/layout/Banner";
 import { PoolTable } from "@/components/scanner/PoolTable";
@@ -20,6 +22,8 @@ export default function Home() {
   const [activePage, setActivePage] = useState<"screener" | "sql-console">("screener");
 
   return (
+    <SharedEventsProvider>
+    <SharedMetricsProvider>
     <main className="min-h-screen flex flex-col" style={{ background: "var(--bg-primary)" }}>
       <Navbar activePage={activePage} onNavigate={(page) => setActivePage(page as "screener" | "sql-console")} />
       {activePage === "sql-console" ? (
@@ -62,5 +66,7 @@ export default function Home() {
       )}
       <ToastContainer />
     </main>
+    </SharedMetricsProvider>
+    </SharedEventsProvider>
   );
 }

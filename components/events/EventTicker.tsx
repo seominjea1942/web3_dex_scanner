@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { usePolling } from "@/hooks/usePolling";
-import { POLLING_INTERVALS, EVENT_TYPE_CONFIG } from "@/lib/constants";
+import { useSharedEvents } from "@/hooks/useSharedEvents";
+import { EVENT_TYPE_CONFIG } from "@/lib/constants";
 import { truncateAddress, formatUsd } from "@/lib/format";
 import type { DefiEvent } from "@/lib/types";
 
@@ -19,12 +19,9 @@ function formatSecondsAgo(seconds: number | undefined): string {
 }
 
 export function EventTicker({ onClick }: EventTickerProps) {
-  const { data: events } = usePolling<DefiEvent[]>(
-    () => fetch("/api/events?limit=10").then((r) => r.json()).then((d) => d.events),
-    POLLING_INTERVALS.EVENTS
-  );
+  const { events } = useSharedEvents();
 
-  const items = events ?? [];
+  const items = (events ?? []).slice(0, 10);
 
   // Track new event IDs for rainbow highlight
   const prevIdsRef = useRef<Set<number>>(new Set());

@@ -8,6 +8,7 @@ import { Sparkline } from "@/components/ui/Sparkline";
 import { DualAxisChart } from "./DualAxisChart";
 import { EventTicker } from "@/components/events/EventTicker";
 import { useWorkloadContext } from "@/hooks/useWorkloadContext";
+import { useSharedMetrics } from "@/hooks/useSharedMetrics";
 import { formatCompact } from "@/lib/format";
 import type { TimeRange } from "@/lib/types";
 
@@ -32,10 +33,8 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
     range // resetKey — triggers immediate re-fetch on range change
   );
 
-  const { data: metrics } = usePolling(
-    () => fetch("/api/metrics").then((r) => r.json()),
-    POLLING_INTERVALS.METRICS
-  );
+  // Use shared metrics instead of own polling
+  const { data: metrics } = useSharedMetrics();
 
   const series = data?.series ?? {};
   const m = metrics?.metrics ?? {};

@@ -1,19 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { usePolling } from "@/hooks/usePolling";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
-import { POLLING_INTERVALS } from "@/lib/constants";
+import { useSharedMetrics } from "@/hooks/useSharedMetrics";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { LiveCounter } from "@/components/ui/LiveCounter";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { formatCompact } from "@/lib/format";
 import { useWorkloadContext } from "@/hooks/useWorkloadContext";
-
-interface MetricsResponse {
-  metrics: Record<string, number>;
-  sparklines: Record<string, number[]>;
-}
 
 interface PerformanceBarProps {
   onExpand: () => void;
@@ -23,10 +17,7 @@ export function PerformanceBar({ onExpand }: PerformanceBarProps) {
   const bp = useBreakpoint();
   const wc = useWorkloadContext();
 
-  const { data } = usePolling<MetricsResponse>(
-    () => fetch("/api/metrics").then((r) => r.json()),
-    POLLING_INTERVALS.METRICS
-  );
+  const { data } = useSharedMetrics();
 
   const m = data?.metrics ?? {};
   const s = data?.sparklines ?? {};

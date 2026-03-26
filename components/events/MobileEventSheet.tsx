@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { usePolling } from "@/hooks/usePolling";
-import { POLLING_INTERVALS, EVENT_TYPE_CONFIG } from "@/lib/constants";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { useSharedEvents } from "@/hooks/useSharedEvents";
+import { EVENT_TYPE_CONFIG } from "@/lib/constants";
 import { truncateAddress, formatUsd } from "@/lib/format";
 import type { DefiEvent } from "@/lib/types";
 
@@ -36,18 +36,18 @@ export function MobileEventSheet({ onClose }: MobileEventSheetProps) {
   const lastProcessedRef = useRef<DefiEvent[] | null>(null);
   const [newEventIds, setNewEventIds] = useState<Set<number>>(new Set());
 
-  const fetcher = () => {
-    const params = new URLSearchParams({ limit: "50" });
-    if (filter === "swap") {
-      params.set("type", "swap");
-      params.set("min_amount", "10000");
-    } else if (filter) {
-      params.set("type", filter);
-    }
-    return fetch(`/api/events?${params}`).then((r) => r.json()).then((d) => d.events as DefiEvent[]);
-  };
+  // Use shared events instead of own polling
+  const { events: allSharedEvents } = useSharedEvents();
 
-  const { data: events } = usePolling(fetcher, POLLING_INTERVALS.EVENTS);
+  // Client-side filter
+  const events = useMemo(() => {
+    if (!allSharedEvents) return null;
+    if (!filter) return allSharedEvents;
+    if (filter === "swap") {
+      return allSharedEvents.filter((e) => e.event_type === "swap" && Number(e.amount_usd) >= 10000);
+    }
+    return allSharedEvents.filter((e) => e.event_type === filter);
+  }, [allSharedEvents, filter]);
 
   // Track newly appeared events for rainbow glow effect
   useEffect(() => {

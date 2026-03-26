@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { usePolling } from "@/hooks/usePolling";
-import { POLLING_INTERVALS } from "@/lib/constants";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useSharedEvents } from "@/hooks/useSharedEvents";
 import { EventItem } from "./EventItem";
 import type { DefiEvent } from "@/lib/types";
 
@@ -27,21 +26,22 @@ export function EventPanel() {
   const lastProcessedRef = useRef<DefiEvent[] | null>(null);
   const [newEventIds, setNewEventIds] = useState<Set<number>>(new Set());
 
-  const fetcher = useCallback(() => {
-    const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
-    if (tab === "swap") {
-      params.set("type", "swap");
-      params.set("min_amount", "10000");
-    } else if (tab) {
-      params.set("type", tab);
-    }
-    return fetch(`/api/events?${params}`).then((r) => r.json()).then((d) => d.events as DefiEvent[]);
-  }, [tab]);
+  // Use shared events instead of own polling
+  const { events: allSharedEvents, loading } = useSharedEvents();
 
-  const { data: liveEvents, loading } = usePolling(fetcher, POLLING_INTERVALS.EVENTS, true, tab);
+  // Client-side filter by tab
+  const liveEvents = useMemo(() => {
+    if (!allSharedEvents) return null;
+    if (!tab) return allSharedEvents.slice(0, PAGE_SIZE);
+    if (tab === "swap") {
+      return allSharedEvents
+        .filter((e) => e.event_type === "swap" && Number(e.amount_usd) >= 10000)
+        .slice(0, PAGE_SIZE);
+    }
+    return allSharedEvents.filter((e) => e.event_type === tab).slice(0, PAGE_SIZE);
+  }, [allSharedEvents, tab]);
 
   // Track newly appeared events for rainbow glow effect
-  // Guard ref prevents strict-mode double-execution from breaking the comparison
   useEffect(() => {
     if (!liveEvents || liveEvents === lastProcessedRef.current) return;
     lastProcessedRef.current = liveEvents;
@@ -83,7 +83,7 @@ export function EventPanel() {
     return [...live, ...extra];
   })();
 
-  // Load more events for infinite scroll
+  // Load more events for infinite scroll (this one still fetches directly — it's on-demand, not polling)
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
