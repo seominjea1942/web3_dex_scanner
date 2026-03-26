@@ -398,6 +398,18 @@ const HEURISTIC_TRIGGERS: Record<string, HeuristicRule> = {
     ],
     sort: { field: "volume_24h", order: "DESC" },
   },
+  "dead volume": {
+    filters: [
+      { field: "volume_24h", op: "<=", value: 100, label: "vol ≤ $100 (dead)" },
+    ],
+    sort: { field: "volume_24h", order: "ASC" },
+  },
+  "no volume": {
+    filters: [
+      { field: "volume_24h", op: "<=", value: 10, label: "vol ≤ $10 (no volume)" },
+    ],
+    sort: { field: "volume_24h", order: "ASC" },
+  },
 };
 
 // ── Time/age: "last hour", "today", "this week", "new", "launched today"

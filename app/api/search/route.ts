@@ -359,22 +359,34 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Sort: RRF score > relevance > popularity-boosted volume (breaks ties)
-    tokens = tokens
-      .sort((a, b) => {
-        if (a._rrfScore && b._rrfScore) return b._rrfScore - a._rrfScore;
-        const relDiff = (b.relevance || 0) - (a.relevance || 0);
-        if (Math.abs(relDiff) > 0.01) return relDiff;
-        // Blend: volume + popularity boost (popularity adds up to 30% weight)
-        const volA = Number(a.volume_24h || 0);
-        const volB = Number(b.volume_24h || 0);
-        const popA = Number(a.search_popularity || 0);
-        const popB = Number(b.search_popularity || 0);
-        const scoreA = volA + (popA * volA * 0.003); // each click adds ~0.3% boost
-        const scoreB = volB + (popB * volB * 0.003);
-        return scoreB - scoreA;
-      })
-      .slice(0, 10);
+    // Sort: if user requested explicit sort, honor it; otherwise RRF > relevance > volume
+    if (sortDirective) {
+      // User-requested sort takes priority (e.g., "top gainers", "highest volume")
+      const { field, order } = sortDirective;
+      tokens = tokens
+        .sort((a, b) => {
+          const va = Number(a[field] ?? 0);
+          const vb = Number(b[field] ?? 0);
+          return order === "DESC" ? vb - va : va - vb;
+        })
+        .slice(0, 10);
+    } else {
+      // Default: RRF score > relevance > popularity-boosted volume
+      tokens = tokens
+        .sort((a, b) => {
+          if (a._rrfScore && b._rrfScore) return b._rrfScore - a._rrfScore;
+          const relDiff = (b.relevance || 0) - (a.relevance || 0);
+          if (Math.abs(relDiff) > 0.01) return relDiff;
+          const volA = Number(a.volume_24h || 0);
+          const volB = Number(b.volume_24h || 0);
+          const popA = Number(a.search_popularity || 0);
+          const popB = Number(b.search_popularity || 0);
+          const scoreA = volA + (popA * volA * 0.003);
+          const scoreB = volB + (popB * volB * 0.003);
+          return scoreB - scoreA;
+        })
+        .slice(0, 10);
+    }
 
     const searchEngine = isFilterOnly ? "tiflash" : getSearchEngineLabel(intent, usedVector);
     const queryTimeMs = Math.round(performance.now() - start);
