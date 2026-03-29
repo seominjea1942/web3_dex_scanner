@@ -885,9 +885,23 @@ function Footer({
 }) {
   const config = ENGINE_CONFIG[engine] || ENGINE_CONFIG.fts;
   const isAdvanced = engine !== "like_fallback" && engine !== "none";
-  const displayMs = (dbTimeMs ?? 0) > 0 ? dbTimeMs : timeMs;
-  const timingBlock = displayMs > 0 ? (
-    <span className="search-query-time">{displayMs}ms</span>
+  const hasDbBreakdown = (dbTimeMs ?? 0) > 0 && dbTimeMs !== timeMs;
+  const timingBlock = timeMs > 0 ? (
+    <span className="flex items-center gap-1.5">
+      {hasDbBreakdown && (
+        <>
+          <span className="search-query-time" title="TiDB query time">TiDB {dbTimeMs}ms</span>
+          <span className="text-[10px]" style={{ color: "var(--border-hover)" }}>·</span>
+        </>
+      )}
+      <span
+        className="search-query-time"
+        style={{ color: hasDbBreakdown ? "var(--text-muted)" : undefined }}
+        title="Total API time"
+      >
+        {hasDbBreakdown ? `API ${timeMs}ms` : `${timeMs}ms`}
+      </span>
+    </span>
   ) : null;
 
   return (
