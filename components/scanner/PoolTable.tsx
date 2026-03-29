@@ -91,8 +91,7 @@ function LatencyBadge({ ms }: { ms: number }) {
               boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
             }}
           >
-            TiDB Cloud query latency.{" "}
-            {ms === 0 ? "Served from cache." : "Live DB response time."}
+            {ms === 0 ? "Served from cache." : "Server-side query time — includes network travel to TiDB Cloud Singapore. Actual TiDB execution is a fraction of this."}
           </div>
         )}
       </div>
