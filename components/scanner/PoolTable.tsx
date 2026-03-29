@@ -275,6 +275,12 @@ export function PoolTable() {
   const basePoolsRef = useRef<Pool[]>([]);
   const [displayPools, setDisplayPools] = useState<Pool[]>([]);
 
+  // Clear display when query intent changes so skeleton shows immediately
+  useEffect(() => {
+    setDisplayPools([]);
+    basePoolsRef.current = [];
+  }, [resetKey]);
+
   // When new API data arrives, update base and display immediately
   useEffect(() => {
     const newPools = data?.pools ?? [];

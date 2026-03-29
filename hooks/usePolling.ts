@@ -25,6 +25,7 @@ export function usePolling<T>(
   useEffect(() => {
     if (!enabled) return;
     const gen = ++genRef.current;
+    setLoading(true);
 
     const doFetch = async () => {
       try {
