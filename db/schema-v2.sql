@@ -153,6 +153,15 @@ CREATE TABLE IF NOT EXISTS performance_metrics (
   INDEX idx_type_time (metric_type, recorded_at DESC)
 );
 
+-- API response cache (L2 shared cache across Edge isolates)
+CREATE TABLE IF NOT EXISTS api_cache (
+  cache_key  VARCHAR(255) PRIMARY KEY,
+  value      JSON        NOT NULL,
+  expires_at BIGINT      NOT NULL,
+  updated_at TIMESTAMP   DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_expires (expires_at)
+);
+
 -- Event templates (for live event replay)
 CREATE TABLE IF NOT EXISTS event_templates (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,

@@ -1,63 +1,102 @@
-// lib/cache.ts — In-memory cache with SWR (stale-while-revalidate) support
+// lib/cache.ts — Two-level cache: L1 in-memory (per isolate) + L2 TiDB (shared across all isolates)
+//
+// L1 hit  → 0ms   (same isolate, in-memory)
+// L2 hit  → ~150ms (different isolate, TiDB primary key lookup)
+// Miss     → fetch + write both levels
 
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
-  ttl: number;
+import { connect } from "@tidbcloud/serverless";
+
+const DATABASE_URL = `mysql://${process.env.TIDB_USER}:${process.env.TIDB_PASSWORD}@${process.env.TIDB_HOST}/${process.env.TIDB_DATABASE}`;
+
+let _conn: ReturnType<typeof connect> | null = null;
+
+function getConn() {
+  if (!_conn) _conn = connect({ url: DATABASE_URL });
+  return _conn;
 }
 
-class InMemoryCache {
-  private store = new Map<string, CacheEntry<any>>();
+interface L1Entry {
+  data: unknown;
+  expiresAt: number;
+}
 
-  get<T>(key: string): T | null {
-    const entry = this.store.get(key);
-    if (!entry) return null;
-    if (Date.now() - entry.timestamp > entry.ttl) {
-      this.store.delete(key);
-      return null;
-    }
-    return entry.data as T;
-  }
+class TiDBCache {
+  private l1 = new Map<string, L1Entry>();
 
-  set<T>(key: string, data: T, ttlMs: number): void {
-    this.store.set(key, {
-      data,
-      timestamp: Date.now(),
-      ttl: ttlMs,
-    });
-  }
-
-  /**
-   * SWR pattern: return cached data immediately + background refresh.
-   * On cache miss, fetch and cache before returning.
-   */
   async getOrFetch<T>(
     key: string,
     fetcher: () => Promise<T>,
     ttlMs: number
   ): Promise<{ data: T; fromCache: boolean; fetchTime: number }> {
-    const cached = this.get<T>(key);
-    if (cached !== null) {
-      // Background refresh (fire & forget)
+    const now = Date.now();
+
+    // ── L1: in-memory ──────────────────────────────────────
+    const l1 = this.l1.get(key);
+    if (l1 && l1.expiresAt > now) {
+      // Serve immediately, refresh both levels in background
       fetcher()
-        .then((fresh) => this.set(key, fresh, ttlMs))
+        .then((fresh) => {
+          this.l1.set(key, { data: fresh, expiresAt: now + ttlMs });
+          this._writeTiDB(key, fresh, ttlMs);
+        })
         .catch(() => {});
-      return { data: cached, fromCache: true, fetchTime: 0 };
+      return { data: l1.data as T, fromCache: true, fetchTime: 0 };
     }
+
+    // ── L2: TiDB ───────────────────────────────────────────
+    try {
+      const rows = (await getConn().execute(
+        "SELECT value, expires_at FROM api_cache WHERE cache_key = ? LIMIT 1",
+        [key]
+      )) as Array<{ value: string; expires_at: number }>;
+
+      if (rows.length > 0 && rows[0].expires_at > now) {
+        // Serverless driver auto-parses JSON columns; handle both cases
+        const raw = rows[0].value;
+        const data = (typeof raw === "string" ? JSON.parse(raw) : raw) as T;
+        // Warm L1 so next request from this isolate is free
+        this.l1.set(key, { data, expiresAt: rows[0].expires_at });
+        // Refresh both levels in background
+        fetcher()
+          .then((fresh) => {
+            this.l1.set(key, { data: fresh, expiresAt: now + ttlMs });
+            this._writeTiDB(key, fresh, ttlMs);
+          })
+          .catch(() => {});
+        return { data, fromCache: true, fetchTime: 0 };
+      }
+    } catch {
+      // TiDB cache lookup failed — fall through to fetch
+    }
+
+    // ── Cache miss: fetch and populate both levels ─────────
     const start = performance.now();
     const data = await fetcher();
     const fetchTime = performance.now() - start;
-    this.set(key, data, ttlMs);
+
+    this.l1.set(key, { data, expiresAt: now + ttlMs });
+    this._writeTiDB(key, data, ttlMs).catch(() => {});
+
     return { data, fromCache: false, fetchTime };
   }
 
-  clear(): void {
-    this.store.clear();
+  private async _writeTiDB(key: string, data: unknown, ttlMs: number) {
+    const expiry = Date.now() + ttlMs;
+    await getConn().execute(
+      `INSERT INTO api_cache (cache_key, value, expires_at)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         value      = VALUES(value),
+         expires_at = VALUES(expires_at)`,
+      [key, JSON.stringify(data), expiry]
+    );
   }
 
-  get size(): number {
-    return this.store.size;
-  }
+  // Retained for API compatibility
+  get<T>(_key: string): T | null { return null; }
+  set<T>(_key: string, _data: T, _ttlMs: number): void {}
+  clear(): void { this.l1.clear(); }
+  get size(): number { return this.l1.size; }
 }
 
-export const cache = new InMemoryCache();
+export const cache = new TiDBCache();
