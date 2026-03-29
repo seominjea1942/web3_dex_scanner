@@ -89,14 +89,14 @@ LIMIT 20`,
     label: "search events",
     icon: "search",
     color: "var(--accent-purple)",
-    tooltip: "TiKV pushdown: LIKE filter on 100K+ event descriptions at storage layer",
+    tooltip: "TiKV storage pushdown: LIKE filter on 100K+ event descriptions — scanned at the storage layer",
     description: "Search on-chain events by keyword. Try changing 'whale' to 'liquidity', 'smart money', or any token name.",
     sql: `SELECT event_type, severity, dex,
        ROUND(usd_value, 2) AS usd_value,
        description,
        FROM_UNIXTIME(timestamp / 1000) AS event_time
 FROM defi_events
-WHERE MATCH(description) AGAINST ('whale' IN BOOLEAN MODE)
+WHERE description LIKE '%whale%'
 ORDER BY timestamp DESC
 LIMIT 20`,
   },
