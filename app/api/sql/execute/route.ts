@@ -91,13 +91,28 @@ async function runQuery(sql: string) {
   const conn = getEdgeConnection();
   const startMs = performance.now();
   const rows = await conn.execute(sql) as Record<string, unknown>[];
-  const executionTimeMs = Math.round((performance.now() - startMs) * 100) / 100;
+  const totalMs = Math.round((performance.now() - startMs) * 100) / 100;
+
+  // Ask TiDB for the actual server-side processing time of the last query
+  let dbExecMs: number | null = null;
+  try {
+    const info = await conn.execute(
+      "SELECT JSON_EXTRACT(tidb_last_query_info(), '$.process_time') AS t"
+    ) as Array<{ t: number | string | null }>;
+    const raw = info?.[0]?.t;
+    if (raw !== null && raw !== undefined) {
+      dbExecMs = Math.round(Number(raw) * 1000);
+    }
+  } catch {
+    // tidb_last_query_info() not available — fall back to total time
+  }
+
   const rowsArr = Array.isArray(rows) ? rows : [];
   const columns = rowsArr.length > 0 ? Object.keys(rowsArr[0]) : [];
   return {
     columns,
     rows: rowsArr.slice(0, 1000),
     rowCount: rowsArr.length,
-    executionTimeMs,
+    executionTimeMs: dbExecMs ?? totalMs,
   };
 }

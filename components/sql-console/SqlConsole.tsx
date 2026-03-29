@@ -335,8 +335,13 @@ export function SqlConsole() {
             style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
           >
             <span style={{ color: "var(--text-secondary)" }}>
-              Query completed in{" "}
+              TiDB{" "}
               <span style={{ color: "var(--accent-green)" }}>{result.executionTimeMs}ms</span>
+              <span
+                className="material-symbols-outlined"
+                title="Time TiDB spent executing the query — excludes network travel between your browser and the database"
+                style={{ fontSize: 11, verticalAlign: "middle", marginLeft: 3, cursor: "help", color: "var(--text-muted)" }}
+              >info</span>
               {" · "}
               <span style={{ color: "var(--text-primary)" }}>{result.rowCount.toLocaleString()}</span> rows returned
             </span>
