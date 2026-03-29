@@ -172,6 +172,15 @@ body {
   animation: fade-in 0.3s ease-out forwards;
 }
 
+/* Filter drawer slide-in */
+@keyframes filter-drawer-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.filter-drawer-slide-in {
+  animation: filter-drawer-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* Performance panel expand/collapse */
 @keyframes perf-overlay-in {
   from { opacity: 0; }
@@ -353,6 +362,18 @@ body {
 
 .search-badge-sparkle {
   animation: sparkle-pulse 2.5s ease-in-out infinite;
+}
+
+/* Reusable skeleton shimmer background */
+.shimmer-bg {
+  background: linear-gradient(
+    90deg,
+    var(--bg-hover) 25%,
+    rgba(255,255,255,0.04) 50%,
+    var(--bg-hover) 75%
+  );
+  background-size: 200% 100%;
+  animation: search-skeleton-shimmer 1.5s ease-in-out infinite;
 }
 
 /* Search skeleton shimmer */

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
+import { cache } from "@/lib/cache";
 import type { RowDataPacket, Pool as MysqlPool } from "mysql2/promise";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const EVENTS_CACHE_TTL = 5_000; // 5s SWR for event list
 
 // Map frontend event type filters to v2 schema event_type values
 const EVENT_TYPE_MAP: Record<string, string[]> = {
@@ -144,20 +147,31 @@ export async function GET(req: NextRequest) {
       queryParams.push(minAmount);
     }
 
-    const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT *,
-        FROM_UNIXTIME(timestamp / 1000) as created_at,
-        trader_wallet as wallet_address,
-        usd_value as amount_usd,
-        dex as dex_name,
-        (UNIX_TIMESTAMP() - timestamp / 1000) as seconds_ago,
-        pool_address,
-        severity
-       FROM defi_events ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
-      [...queryParams, limit, offset]
+    const cacheKey = `events:${type ?? "all"}:${limit}:${offset}:${minAmount}`;
+
+    const { data: rows, fromCache } = await cache.getOrFetch(
+      cacheKey,
+      async () => {
+        const [result] = await db.query<RowDataPacket[]>(
+          `SELECT
+            id,
+            event_type,
+            FROM_UNIXTIME(timestamp / 1000) as created_at,
+            trader_wallet as wallet_address,
+            usd_value as amount_usd,
+            dex as dex_name,
+            pool_address,
+            severity,
+            description
+           FROM defi_events ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+          [...queryParams, limit, offset]
+        );
+        return result;
+      },
+      EVENTS_CACHE_TTL
     );
 
-    return NextResponse.json({ events: rows });
+    return NextResponse.json({ events: rows, fromCache });
   } catch (e) {
     console.error("GET /api/events error:", e);
     return NextResponse.json({ error: "Failed to fetch events" }, { status: 500 });
