@@ -891,7 +891,7 @@ function Footer({
       <span className="search-query-time">{displayMs}ms</span>
       <span
         className="material-symbols-outlined"
-        title="Time spent executing queries in TiDB — excludes network latency between client and server"
+        title="Server-side query time — includes network travel to TiDB Cloud Singapore. Actual TiDB execution is a fraction of this."
         style={{ fontSize: 12, color: "var(--text-muted)", cursor: "help", lineHeight: 1 }}
       >
         info

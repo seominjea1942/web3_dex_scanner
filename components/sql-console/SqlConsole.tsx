@@ -339,7 +339,7 @@ export function SqlConsole() {
               <span style={{ color: "var(--accent-green)" }}>{result.executionTimeMs}ms</span>
               <span
                 className="material-symbols-outlined"
-                title="Round-trip time from server to TiDB Cloud and back — includes network travel to the database region"
+                title="Server-side query time — includes network travel to TiDB Cloud Singapore. Actual TiDB execution is a fraction of this."
                 style={{ fontSize: 11, verticalAlign: "middle", marginLeft: 3, cursor: "help", color: "var(--text-muted)" }}
               >info</span>
               {" · "}
