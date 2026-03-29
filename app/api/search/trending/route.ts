@@ -13,9 +13,11 @@ export async function GET() {
   try {
     const conn = getEdgeConnection();
 
+    const dbStart = Date.now();
     const { data: trending, fromCache } = await cache.getOrFetch(
       "search:trending",
       async () => {
+        const t0 = Date.now();
         const [gainers, whaleAlerts, newPools] = await Promise.all([
           conn.execute(
             `SELECT
@@ -57,18 +59,26 @@ export async function GET() {
           gainers,
           whale_alerts: whaleAlerts,
           new_pools: newPools,
+          _dbTimeMs: Date.now() - t0,
         };
       },
       TRENDING_CACHE_TTL
     );
 
     const queryTimeMs = Date.now() - start;
+    const dbTimeMs = fromCache ? 0 : (trending._dbTimeMs ?? 0);
+    const { _dbTimeMs: _, ...trendingData } = trending;
+
+    const headers = new Headers({
+      "Cache-Control": "public, s-maxage=10, stale-while-revalidate=30",
+      "Server-Timing": `db;dur=${dbTimeMs}, total;dur=${queryTimeMs}`,
+    });
 
     return NextResponse.json({
-      ...trending,
+      ...trendingData,
       query_time_ms: queryTimeMs,
       fromCache,
-    });
+    }, { headers });
   } catch (e) {
     return NextResponse.json(
       { error: "Failed to fetch trending data", detail: String(e) },

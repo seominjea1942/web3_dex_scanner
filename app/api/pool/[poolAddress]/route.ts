@@ -17,6 +17,7 @@ export async function GET(
     const { poolAddress } = await params;
     const conn = getEdgeConnection();
 
+    const dbStart = Date.now();
     const { data: queryResult, fromCache } = await cache.getOrFetch(
       `pool-detail:${poolAddress}`,
       async () => {
@@ -87,6 +88,12 @@ export async function GET(
     const events24h = eventRows[0]?.cnt ?? 0;
     const queryTimeMs = Date.now() - start;
 
+    const dbTimeMs = fromCache ? 0 : Date.now() - dbStart;
+    const headers = new Headers({
+      "Cache-Control": "public, s-maxage=5, stale-while-revalidate=30",
+      "Server-Timing": `db;dur=${dbTimeMs}, total;dur=${queryTimeMs}`,
+    });
+
     return NextResponse.json({
       pool_address: pool.pool_address,
       dex: pool.dex,
@@ -129,7 +136,7 @@ export async function GET(
       last_updated: pool.last_updated,
       query_time_ms: queryTimeMs,
       fromCache,
-    });
+    }, { headers });
   } catch (e) {
     console.error("GET /api/pool/[poolAddress] error:", e);
     return NextResponse.json(

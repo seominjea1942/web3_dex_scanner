@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS defi_events (
   INDEX idx_timestamp (timestamp DESC),
   INDEX idx_event_type (event_type, timestamp),
   INDEX idx_severity (severity, timestamp),
+  INDEX idx_events_pool_ts (pool_address, timestamp DESC),
   FULLTEXT INDEX idx_events_desc_ft (description) WITH PARSER STANDARD
 );
 
