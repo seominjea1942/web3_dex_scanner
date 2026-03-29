@@ -1,10 +1,21 @@
 "use client";
 
+import { useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { Pool } from "@/lib/types";
 import type { Breakpoint } from "@/hooks/useBreakpoint";
 import { formatPrice, formatUsd, formatPercent, formatNumber, truncateAddress, formatAge } from "@/lib/format";
 import { CopyButton } from "@/components/ui/CopyButton";
+
+// Prefetch pool detail data on hover (fire-and-forget, deduped)
+const prefetchedPools = new Set<string>();
+function prefetchPool(poolId: string) {
+  if (prefetchedPools.has(poolId)) return;
+  prefetchedPools.add(poolId);
+  // Prefetch pool detail + chart data in parallel
+  fetch(`/api/pool/${poolId}`).catch(() => {});
+  fetch(`/api/pool/${poolId}/ohlcv?interval=15m`).catch(() => {});
+}
 
 // DEX logos from DexScreener CDN
 const DEX_LOGOS: Record<string, string> = {
@@ -32,6 +43,16 @@ function PriceChange({ value }: { value: number }) {
 
 export function PoolRow({ pool, rank, breakpoint: bp }: PoolRowProps) {
   const router = useRouter();
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Prefetch on hover with 150ms delay (avoids prefetching on quick scroll-by)
+  const handleMouseEnter = useCallback(() => {
+    hoverTimerRef.current = setTimeout(() => prefetchPool(pool.id), 150);
+  }, [pool.id]);
+  const handleMouseLeave = useCallback(() => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+  }, []);
+
   // Derive initials: prefer symbol, fall back to pair_label split, then "?"
   const [pairBase, pairQuote] = (pool.pair_label || "").split("/");
   const baseInitial = (pool.base_symbol || pairBase || "?")[0];
@@ -43,6 +64,8 @@ export function PoolRow({ pool, rank, breakpoint: bp }: PoolRowProps) {
       className="pool-row border-b transition-colors cursor-pointer"
       style={{ borderColor: "var(--border)" }}
       onClick={() => router.push(`/pool/${pool.id}`)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {/* Rank */}
       <td className="px-4 py-3 text-sm font-mono sticky left-0 z-10" style={{ color: "var(--text-muted)", background: "var(--bg-primary)" }}>

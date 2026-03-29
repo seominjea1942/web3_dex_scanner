@@ -89,3 +89,20 @@ export type EventType =
   | "liquidity"
   | "smart_money";
 export type TimeRange = "1H" | "6H" | "24H" | "7D";
+
+export type ScreenerPeriod = "1h" | "24h";
+
+export interface RangeValue {
+  min?: number;
+  max?: number;
+}
+
+export interface ScreenerFilters {
+  age: RangeValue;       // from pool_created_at
+  liquidity: RangeValue; // liquidity_usd
+  period: ScreenerPeriod;
+  volume: RangeValue;    // volume_1h or volume_24h
+  txns: RangeValue;      // txns_24h_buys + txns_24h_sells (24h only)
+  buys: RangeValue;      // txns_24h_buys (24h only)
+  sells: RangeValue;     // txns_24h_sells (24h only)
+}

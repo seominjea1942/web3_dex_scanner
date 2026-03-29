@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool, withTiKV, withTiFlash } from "@/lib/db";
+import { cache } from "@/lib/cache";
 import {
   classifyQuery,
   getQueryEmbedding,
@@ -53,13 +54,20 @@ export async function GET(req: NextRequest) {
   const start = performance.now();
 
   // Refresh symbol cache for fuzzy matching (lazy, every 5 min)
-  // Must await if cache is empty — fuzzy match needs symbols loaded
+  // Uses SWR cache to avoid hitting DB on every search request
   if (isSymbolCacheStale()) {
     try {
-      const [rows] = await db.query<RowDataPacket[]>(
-        "SELECT DISTINCT token_base_symbol AS symbol, token_base_address AS address FROM pools"
+      const { data: symbols } = await cache.getOrFetch(
+        "search:symbol-list",
+        async () => {
+          const [rows] = await db.query<RowDataPacket[]>(
+            "SELECT DISTINCT token_base_symbol AS symbol, token_base_address AS address FROM pools"
+          );
+          return rows.map((r: any) => ({ symbol: r.symbol as string, address: r.address as string }));
+        },
+        300_000 // 5 min
       );
-      setSymbolCache(rows.map((r: any) => ({ symbol: r.symbol, address: r.address })));
+      setSymbolCache(symbols);
     } catch { /* non-critical */ }
   }
 

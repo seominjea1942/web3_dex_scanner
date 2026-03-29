@@ -1,71 +1,80 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPool } from "@/lib/db";
-import type { RowDataPacket } from "mysql2";
+import { getEdgeConnection } from "@/lib/db-edge";
+import { cache } from "@/lib/cache";
 
-export const runtime = "nodejs";
+export const runtime = "edge";
 export const dynamic = "force-dynamic";
+
+const POOL_DETAIL_CACHE_TTL = 5_000; // 5s — refreshed every 5s by polling
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ poolAddress: string }> }
 ) {
-  const start = performance.now();
+  const start = Date.now();
 
   try {
     const { poolAddress } = await params;
-    const db = getPool();
+    const conn = getEdgeConnection();
 
-    // Run both queries in parallel (was sequential — saves ~180ms RTT)
-    const [poolResult, eventResult] = await Promise.all([
-      db.query<RowDataPacket[]>(
-        `SELECT
-          p.address AS pool_address,
-          p.dex,
-          p.price_usd,
-          p.price_change_1h,
-          p.price_change_6h,
-          p.price_change_24h,
-          p.market_cap,
-          p.volume_24h,
-          p.liquidity_usd,
-          p.pool_created_at,
-          p.last_updated,
-          p.token_base_address,
-          p.token_base_symbol,
-          p.token_quote_address,
-          p.token_quote_symbol,
-          p.volume_5m,
-          p.volume_1h,
-          p.volume_6h,
-          p.txns_5m_buys,
-          p.txns_5m_sells,
-          p.txns_1h_buys,
-          p.txns_1h_sells,
-          p.txns_24h_buys,
-          p.txns_24h_sells,
-          t_base.name   AS base_name,
-          t_base.logo_url AS base_logo_url,
-          t_quote.name  AS quote_name,
-          t_quote.logo_url AS quote_logo_url,
-          ts.holder_count
-        FROM pools p
-        LEFT JOIN tokens t_base  ON p.token_base_address  = t_base.address
-        LEFT JOIN tokens t_quote ON p.token_quote_address = t_quote.address
-        LEFT JOIN token_safety ts ON p.token_base_address  = ts.token_address
-        WHERE p.address = ?`,
-        [poolAddress]
-      ),
-      db.query<Array<{ cnt: number } & RowDataPacket>>(
-        `SELECT COUNT(*) AS cnt
-         FROM defi_events
-         WHERE pool_address = ?
-           AND timestamp >= (UNIX_TIMESTAMP() * 1000 - 86400000)`,
-        [poolAddress]
-      ),
-    ]);
+    const { data: queryResult, fromCache } = await cache.getOrFetch(
+      `pool-detail:${poolAddress}`,
+      async () => {
+        // Run both queries in parallel
+        const [rows, eventRows] = await Promise.all([
+          conn.execute(
+            `SELECT
+              p.address AS pool_address,
+              p.dex,
+              p.price_usd,
+              p.price_change_1h,
+              p.price_change_6h,
+              p.price_change_24h,
+              p.market_cap,
+              p.volume_24h,
+              p.liquidity_usd,
+              p.pool_created_at,
+              p.last_updated,
+              p.token_base_address,
+              p.token_base_symbol,
+              p.token_quote_address,
+              p.token_quote_symbol,
+              p.volume_5m,
+              p.volume_1h,
+              p.volume_6h,
+              p.txns_5m_buys,
+              p.txns_5m_sells,
+              p.txns_1h_buys,
+              p.txns_1h_sells,
+              p.txns_24h_buys,
+              p.txns_24h_sells,
+              t_base.name   AS base_name,
+              t_base.logo_url AS base_logo_url,
+              t_quote.name  AS quote_name,
+              t_quote.logo_url AS quote_logo_url,
+              ts.holder_count
+            FROM pools p
+            LEFT JOIN tokens t_base  ON p.token_base_address  = t_base.address
+            LEFT JOIN tokens t_quote ON p.token_quote_address = t_quote.address
+            LEFT JOIN token_safety ts ON p.token_base_address  = ts.token_address
+            WHERE p.address = ?`,
+            [poolAddress]
+          ) as Promise<Record<string, any>[]>,
+          conn.execute(
+            `SELECT COUNT(*) AS cnt
+             FROM defi_events
+             WHERE pool_address = ?
+               AND timestamp >= (UNIX_TIMESTAMP() * 1000 - 86400000)`,
+            [poolAddress]
+          ) as Promise<Array<{ cnt: number }>>,
+        ]);
+        return { rows, eventRows };
+      },
+      POOL_DETAIL_CACHE_TTL
+    );
 
-    const [rows] = poolResult;
-    const [eventRows] = eventResult;
+    const rows = queryResult.rows;
+    const eventRows = queryResult.eventRows;
 
     if (rows.length === 0) {
       return NextResponse.json(
@@ -76,7 +85,7 @@ export async function GET(
 
     const pool = rows[0];
     const events24h = eventRows[0]?.cnt ?? 0;
-    const queryTimeMs = Math.round((performance.now() - start) * 100) / 100;
+    const queryTimeMs = Date.now() - start;
 
     return NextResponse.json({
       pool_address: pool.pool_address,
@@ -119,6 +128,7 @@ export async function GET(
       pool_created_at: pool.pool_created_at,
       last_updated: pool.last_updated,
       query_time_ms: queryTimeMs,
+      fromCache,
     });
   } catch (e) {
     console.error("GET /api/pool/[poolAddress] error:", e);

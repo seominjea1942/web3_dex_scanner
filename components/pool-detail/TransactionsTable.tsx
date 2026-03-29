@@ -228,11 +228,17 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
           </thead>
           <tbody>
             {loading && txns.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-3 py-8 text-center" style={{ color: "var(--text-muted)" }}>
-                  Loading transactions...
-                </td>
-              </tr>
+              Array.from({ length: 8 }).map((_, i) => (
+                <tr key={i} style={{ background: i % 2 === 0 ? "var(--bg-primary)" : "var(--bg-card)" }}>
+                  <td className="px-3 py-2"><div className="h-3 w-12 rounded shimmer-bg" /></td>
+                  <td className="px-3 py-2"><div className="h-3 w-8 rounded shimmer-bg" /></td>
+                  <td className="px-3 py-2"><div className="h-3 w-16 rounded shimmer-bg" /></td>
+                  <td className="px-3 py-2"><div className="h-3 w-12 rounded shimmer-bg" /></td>
+                  <td className="px-3 py-2"><div className="h-3 w-14 rounded shimmer-bg" /></td>
+                  <td className="px-3 py-2"><div className="h-3 w-20 rounded shimmer-bg" /></td>
+                  <td className="px-3 py-2"><div className="h-3 w-4 rounded shimmer-bg" /></td>
+                </tr>
+              ))
             ) : txns.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-3 py-8 text-center" style={{ color: "var(--text-muted)" }}>

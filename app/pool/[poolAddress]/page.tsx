@@ -80,18 +80,7 @@ export default function PoolDetailPage() {
     }
   }, [router]);
 
-  if (loading && !poolData) {
-    return (
-      <main className="min-h-screen flex flex-col" style={{ background: "var(--bg-primary)" }}>
-        <Navbar onNavigate={handleNavbarNavigate} />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading pool data...</div>
-        </div>
-      </main>
-    );
-  }
-
-  if (!poolData) {
+  if (!loading && !poolData) {
     return (
       <main className="min-h-screen flex flex-col" style={{ background: "var(--bg-primary)" }}>
         <Navbar onNavigate={handleNavbarNavigate} />
@@ -111,6 +100,17 @@ export default function PoolDetailPage() {
     );
   }
 
+  // Header bar shimmer (shown while poolData loading)
+  const headerShimmer = (
+    <div className="hidden lg:flex items-center gap-3 px-4 py-2.5 border-b" style={{ background: "var(--bg-sidebar)", borderColor: "var(--border)" }}>
+      <div className="w-7 h-7 rounded-md shimmer-bg" />
+      <div className="w-6 h-6 rounded-full shimmer-bg" />
+      <div className="h-4 w-28 rounded shimmer-bg" />
+      <div className="h-4 w-16 rounded shimmer-bg" />
+      <div className="h-4 w-20 rounded shimmer-bg" />
+    </div>
+  );
+
   return (
     <main className="min-h-screen flex flex-col" style={{ background: "var(--bg-primary)" }}>
       <Navbar onNavigate={handleNavbarNavigate} />
@@ -121,6 +121,7 @@ export default function PoolDetailPage() {
         <div className="flex-1 min-w-0 overflow-y-auto pb-14 lg:pb-0">
 
           {/* Token tab bar — desktop only */}
+          {!poolData ? headerShimmer : (
           <div
             className="hidden lg:flex items-center gap-3 px-4 py-2.5 border-b"
             style={{ background: "var(--bg-sidebar)", borderColor: "var(--border)" }}
@@ -169,6 +170,7 @@ export default function PoolDetailPage() {
               <span className="w-1.5 h-1.5 rounded-full shrink-0 ml-auto" style={{ background: "var(--accent-green)" }} />
             </div>
           </div>
+          )}
 
           {/* ── Mobile: section content based on bottom nav ── */}
           <div className="lg:hidden">
@@ -182,7 +184,7 @@ export default function PoolDetailPage() {
                   <span className="material-symbols-outlined" style={{ fontSize: 18 }}>arrow_back</span>
                   Back
                 </button>
-                <TokenSidebar data={poolData} />
+                {poolData ? <TokenSidebar data={poolData} /> : <div className="h-40 rounded-lg shimmer-bg" />}
                 <div className="h-px" style={{ background: "var(--border)" }} />
                 <RecentEvents poolAddress={poolAddress} />
               </div>
@@ -204,12 +206,14 @@ export default function PoolDetailPage() {
             )}
             {mobileSection === "liquidity" && (
               <div className="p-4">
-                <LiquidityPools tokenAddress={poolData.base_token.address} currentPoolAddress={poolAddress} onNavigate={navigateToPool} />
+                {poolData ? (
+                  <LiquidityPools tokenAddress={poolData.base_token.address} currentPoolAddress={poolAddress} onNavigate={navigateToPool} />
+                ) : <div className="h-40 rounded-lg shimmer-bg" />}
               </div>
             )}
             {mobileSection === "top-traders" && (
               <div className="p-4">
-                <TopTraders poolAddress={poolAddress} tokenSymbol={poolData.base_token.symbol} />
+                <TopTraders poolAddress={poolAddress} tokenSymbol={poolData?.base_token.symbol ?? ""} />
               </div>
             )}
           </div>
@@ -256,7 +260,7 @@ export default function PoolDetailPage() {
                 {activeTab === "similar" && (
                   <SimilarPatterns poolAddress={poolAddress} onNavigate={navigateToPool} />
                 )}
-                {activeTab === "liquidity" && (
+                {activeTab === "liquidity" && poolData && (
                   <LiquidityPools
                     tokenAddress={poolData.base_token.address}
                     currentPoolAddress={poolAddress}
@@ -264,7 +268,7 @@ export default function PoolDetailPage() {
                   />
                 )}
                 {activeTab === "top-traders" && (
-                  <TopTraders poolAddress={poolAddress} tokenSymbol={poolData.base_token.symbol} />
+                  <TopTraders poolAddress={poolAddress} tokenSymbol={poolData?.base_token.symbol ?? ""} />
                 )}
               </div>
             </div>
@@ -284,7 +288,7 @@ export default function PoolDetailPage() {
           }}
         >
           <div className="p-4 space-y-4">
-            <TokenSidebar data={poolData} sidebarMode />
+            {poolData ? <TokenSidebar data={poolData} sidebarMode /> : <div className="h-40 rounded-lg shimmer-bg" />}
             <div className="h-px" style={{ background: "var(--border)" }} />
             <RecentEvents poolAddress={poolAddress} />
           </div>

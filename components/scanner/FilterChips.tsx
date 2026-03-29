@@ -1,10 +1,12 @@
 "use client";
 
-import type { FilterType } from "@/lib/types";
+import type { FilterType, ScreenerFilters } from "@/lib/types";
 
 interface FilterChipsProps {
   activeFilter: FilterType;
   onFilterChange: (f: FilterType) => void;
+  hasScreenerFilters: boolean;
+  onFilterButtonClick: () => void;
 }
 
 const FILTERS: { key: FilterType & string; label: string; icon: string; activeColor: string; activeBg: string }[] = [
@@ -31,7 +33,7 @@ const FILTERS: { key: FilterType & string; label: string; icon: string; activeCo
   },
 ];
 
-export function FilterChips({ activeFilter, onFilterChange }: FilterChipsProps) {
+export function FilterChips({ activeFilter, onFilterChange, hasScreenerFilters, onFilterButtonClick }: FilterChipsProps) {
   return (
     <div className="flex items-center gap-1.5">
       {FILTERS.map((f) => {
@@ -54,6 +56,25 @@ export function FilterChips({ activeFilter, onFilterChange }: FilterChipsProps) 
           </button>
         );
       })}
+      {/* Filter button */}
+      <button
+        onClick={onFilterButtonClick}
+        className="h-8 px-2.5 rounded-lg text-xs border transition-colors flex items-center gap-1 relative"
+        style={{
+          borderColor: hasScreenerFilters ? "var(--accent-teal)" : "var(--border)",
+          background: hasScreenerFilters ? "rgba(129, 140, 248, 0.15)" : "transparent",
+          color: hasScreenerFilters ? "var(--accent-teal)" : "var(--text-muted)",
+        }}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>tune</span>
+        Filter
+        {hasScreenerFilters && (
+          <span
+            className="absolute -top-1 -right-1 w-2 h-2 rounded-full"
+            style={{ background: "var(--accent-teal)" }}
+          />
+        )}
+      </button>
     </div>
   );
 }

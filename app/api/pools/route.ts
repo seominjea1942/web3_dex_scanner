@@ -1,32 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPool } from "@/lib/db";
-import type { RowDataPacket } from "mysql2";
+import { getEdgeConnection } from "@/lib/db-edge";
+import { cache } from "@/lib/cache";
 
-export const runtime = "nodejs";
+export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
-// Lazy pool sync: trigger /api/sync/pools when data is stale (>5 min)
-const lazySyncPools = async (req: NextRequest) => {
-  try {
-    const origin = req.nextUrl.origin;
-    const res = await fetch(`${origin}/api/sync/pools`, {
-      method: "GET",
-      headers: { "x-internal": "1" },
-    });
-    if (!res.ok) console.warn("Pool sync returned", res.status);
-  } catch (err) {
-    console.warn("Pool sync skipped:", err);
-  }
-};
+const POOLS_CACHE_TTL = 10_000; // 10s SWR TTL for pool list
 
 export async function GET(req: NextRequest) {
   try {
-    const db = getPool();
+    const conn = getEdgeConnection();
     const params = req.nextUrl.searchParams;
-
-    // Fire-and-forget: sync pools from DexScreener if stale (>5 min)
-    // Don't await — let it run in background while we serve cached data
-    lazySyncPools(req).catch(() => {});
 
     const sort = params.get("sort") || "volume_24h";
     const order = params.get("order") === "asc" ? "ASC" : "DESC";
@@ -49,7 +33,6 @@ export async function GET(req: NextRequest) {
       velocity: "(COALESCE(p.volume_1h,0) / GREATEST(p.volume_24h / 24, 1))",
     };
 
-    // Filters use the user's chosen sort (from dropdown).
     // Gainers/Losers override sort to price_change since that's always the intent.
     let effectiveSort = sort;
     let effectiveOrder = order;
@@ -81,64 +64,74 @@ export async function GET(req: NextRequest) {
       where += " AND p.price_change_24h < 0";
     }
 
-    // Run count + data queries in parallel (saves ~180ms RTT)
-    const [countResult, dataResult] = await Promise.all([
-      db.query<Array<{ total: number } & RowDataPacket>>(
-        `SELECT COUNT(*) as total FROM pools p
-         LEFT JOIN tokens t_base ON p.token_base_address = t_base.address
-         ${where}`,
-        queryParams
-      ),
-      db.query<RowDataPacket[]>(
-        `SELECT
-          p.address as id,
-          p.token_base_address as token_base_id,
-          p.token_quote_address as token_quote_id,
-          CONCAT(p.token_base_symbol, '/', p.token_quote_symbol) as pair_label,
-          p.dex as dex_name,
-          'AMM' as pool_type,
-          'solana' as chain,
-          (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as makers,
-          (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as txns_24h,
-          p.last_updated as updated_at,
-          p.price_usd,
-          p.price_change_5m,
-          p.price_change_1h,
-          p.price_change_6h,
-          p.price_change_24h,
-          p.volume_24h,
-          COALESCE(p.volume_1h, 0) as volume_1h,
-          p.liquidity_usd,
-          p.market_cap,
-          p.pool_created_at,
-          t_base.logo_url as base_logo_url,
-          t_base.name as base_name,
-          t_base.symbol as base_symbol,
-          t_quote.logo_url as quote_logo_url,
-          t_quote.symbol as quote_symbol
-         FROM pools p
-         LEFT JOIN tokens t_base ON p.token_base_address = t_base.address
-         LEFT JOIN tokens t_quote ON p.token_quote_address = t_quote.address
-         ${where}
-         ORDER BY ${sortCol} ${effectiveOrder}
-         LIMIT ? OFFSET ?`,
-        [...queryParams, limit, offset]
-      ),
-    ]);
+    // SWR cache key based on query params
+    const cacheKey = `pools:${effectiveSort}:${effectiveOrder}:${search}:${filter}:${page}:${limit}`;
 
-    const total = countResult[0][0]?.total ?? 0;
-    const rows = dataResult[0];
+    const { data: cachedResult, fromCache } = await cache.getOrFetch(
+      cacheKey,
+      async () => {
+        // Run count + data queries in parallel
+        const [countRows, dataRows] = await Promise.all([
+          conn.execute(
+            `SELECT COUNT(*) as total FROM pools p
+             LEFT JOIN tokens t_base ON p.token_base_address = t_base.address
+             ${where}`,
+            queryParams
+          ) as Promise<Array<{ total: number }>>,
+          conn.execute(
+            `SELECT
+              p.address as id,
+              p.token_base_address as token_base_id,
+              p.token_quote_address as token_quote_id,
+              CONCAT(p.token_base_symbol, '/', p.token_quote_symbol) as pair_label,
+              p.dex as dex_name,
+              'AMM' as pool_type,
+              'solana' as chain,
+              (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as makers,
+              (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as txns_24h,
+              p.last_updated as updated_at,
+              p.price_usd,
+              p.price_change_5m,
+              p.price_change_1h,
+              p.price_change_6h,
+              p.price_change_24h,
+              p.volume_24h,
+              COALESCE(p.volume_1h, 0) as volume_1h,
+              p.liquidity_usd,
+              p.market_cap,
+              p.pool_created_at,
+              t_base.logo_url as base_logo_url,
+              t_base.name as base_name,
+              t_base.symbol as base_symbol,
+              t_quote.logo_url as quote_logo_url,
+              t_quote.symbol as quote_symbol
+             FROM pools p
+             LEFT JOIN tokens t_base ON p.token_base_address = t_base.address
+             LEFT JOIN tokens t_quote ON p.token_quote_address = t_quote.address
+             ${where}
+             ORDER BY ${sortCol} ${effectiveOrder}
+             LIMIT ? OFFSET ?`,
+            [...queryParams, limit, offset]
+          ) as Promise<Record<string, any>[]>,
+        ]);
+        return { total: countRows[0]?.total ?? 0, rows: dataRows };
+      },
+      POOLS_CACHE_TTL
+    );
+
+    const total = cachedResult.total;
+    const rows = cachedResult.rows;
 
     // Apply live jitter to simulate real-time ticks
-    const pools = rows.map((row) => {
+    const pools = rows.map((row: Record<string, any>) => {
       const price = Number(row.price_usd);
-      const priceJitter = price * (Math.random() - 0.5) * 0.002; // +-0.1%
+      const priceJitter = price * (Math.random() - 0.5) * 0.002;
       const vol = Number(row.volume_24h);
-      const volJitter = vol * (Math.random() - 0.5) * 0.01; // +-0.5%
+      const volJitter = vol * (Math.random() - 0.5) * 0.01;
       const liq = Number(row.liquidity_usd);
-      const liqJitter = liq * (Math.random() - 0.5) * 0.004; // +-0.2%
+      const liqJitter = liq * (Math.random() - 0.5) * 0.004;
       const mcap = Number(row.market_cap);
-      const mcapJitter = mcap * (Math.random() - 0.5) * 0.002; // +-0.1%
+      const mcapJitter = mcap * (Math.random() - 0.5) * 0.002;
       const makers = Number(row.makers);
       const makersJitter = Math.round((Math.random() - 0.5) * Math.max(4, makers * 0.002));
       return {
@@ -156,13 +149,16 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       pools,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+      fromCache,
     });
+    res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=25");
+    return res;
   } catch (e) {
     console.error("GET /api/pools error:", e);
     return NextResponse.json({ error: "Failed to fetch pools" }, { status: 500 });

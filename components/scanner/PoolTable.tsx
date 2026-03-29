@@ -7,8 +7,28 @@ import { POLLING_INTERVALS } from "@/lib/constants";
 import { PoolRow } from "./PoolRow";
 import { SearchBar } from "./SearchBar";
 import { FilterChips } from "./FilterChips";
+import { FilterModal } from "./FilterModal";
 import { SortDropdown } from "./SortDropdown";
-import type { Pool, SortField, FilterType } from "@/lib/types";
+import type { Pool, SortField, FilterType, ScreenerFilters, RangeValue } from "@/lib/types";
+
+const DEFAULT_SCREENER_FILTERS: ScreenerFilters = {
+  age: {},
+  liquidity: {},
+  period: "24h",
+  volume: {},
+  txns: {},
+  buys: {},
+  sells: {},
+};
+
+function hasActiveScreenerFilters(f: ScreenerFilters): boolean {
+  const rangeKeys: (keyof ScreenerFilters)[] = ["age", "liquidity", "volume", "txns", "buys", "sells"];
+  for (const k of rangeKeys) {
+    const r = f[k] as RangeValue;
+    if (r.min !== undefined || r.max !== undefined) return true;
+  }
+  return false;
+}
 
 const CLIENT_TICK_MS = 2_000;
 
@@ -172,6 +192,8 @@ export function PoolTable() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [activeFilter, setActiveFilter] = useState<FilterType>(null);
+  const [screenerFilters, setScreenerFilters] = useState<ScreenerFilters>(DEFAULT_SCREENER_FILTERS);
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
 
   const fetcher = useCallback(() => {
     const params = new URLSearchParams({
@@ -247,6 +269,8 @@ export function PoolTable() {
         <FilterChips
           activeFilter={activeFilter}
           onFilterChange={(f) => { setActiveFilter(f); setPage(1); }}
+          hasScreenerFilters={hasActiveScreenerFilters(screenerFilters)}
+          onFilterButtonClick={() => setFilterModalOpen(true)}
         />
         <div className={bp !== "mobile" ? "ml-auto" : ""}>
           <SortDropdown value={sort} onChange={(v) => { setSort(v); setPage(1); }} />
@@ -299,9 +323,41 @@ export function PoolTable() {
             {loading && pools.length === 0
               ? Array.from({ length: 10 }).map((_, i) => (
                   <tr key={i} className="border-b" style={{ borderColor: "var(--border)" }}>
-                    <td colSpan={15} className="px-4 py-4">
-                      <div className="h-4 rounded animate-pulse" style={{ background: "var(--bg-hover)", width: `${60 + Math.random() * 30}%` }} />
+                    <td className="px-4 py-3 sticky left-0 z-10" style={{ background: "var(--bg-primary)" }}>
+                      <div className="h-3 w-4 rounded shimmer-bg" />
                     </td>
+                    <td className="px-3 py-3 sticky left-10 z-10" style={{ background: "var(--bg-primary)" }}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full shimmer-bg shrink-0" />
+                        <div className="space-y-1">
+                          <div className="h-3 rounded shimmer-bg" style={{ width: 70 + (i % 3) * 20 }} />
+                          <div className="h-2.5 rounded shimmer-bg" style={{ width: 40 }} />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-right"><div className="h-3 w-14 rounded shimmer-bg ml-auto" /></td>
+                    {bp !== "mobile" && bp !== "tablet" && (
+                      <>
+                        <td className="px-3 py-3 text-right"><div className="h-3 w-10 rounded shimmer-bg ml-auto" /></td>
+                        <td className="px-3 py-3 text-right"><div className="h-3 w-10 rounded shimmer-bg ml-auto" /></td>
+                        <td className="px-3 py-3 text-right"><div className="h-3 w-10 rounded shimmer-bg ml-auto" /></td>
+                      </>
+                    )}
+                    <td className="px-3 py-3 text-right"><div className="h-3 w-10 rounded shimmer-bg ml-auto" /></td>
+                    <td className="px-3 py-3 text-right"><div className="h-3 w-16 rounded shimmer-bg ml-auto" /></td>
+                    <td className="px-3 py-3 text-right"><div className="h-3 w-14 rounded shimmer-bg ml-auto" /></td>
+                    {bp === "desktop" && (
+                      <>
+                        <td className="px-3 py-3 text-right"><div className="h-3 w-14 rounded shimmer-bg ml-auto" /></td>
+                        <td className="px-3 py-3 text-right"><div className="h-3 w-10 rounded shimmer-bg ml-auto" /></td>
+                        <td className="px-3 py-3 text-right"><div className="h-3 w-10 rounded shimmer-bg ml-auto" /></td>
+                        <td className="px-3 py-3 text-right"><div className="h-3 w-10 rounded shimmer-bg ml-auto" /></td>
+                        <td className="px-3 py-3 text-right"><div className="h-3 w-12 rounded shimmer-bg ml-auto" /></td>
+                      </>
+                    )}
+                    {bp === "tablet" && (
+                      <td className="px-3 py-3 text-right"><div className="h-3 w-10 rounded shimmer-bg ml-auto" /></td>
+                    )}
                   </tr>
                 ))
               : pools.map((pool, i) => (
@@ -392,6 +448,14 @@ export function PoolTable() {
           </div>
         </div>
       )}
+
+      {/* Filter modal */}
+      <FilterModal
+        open={filterModalOpen}
+        onClose={() => setFilterModalOpen(false)}
+        onApply={(filters) => { setScreenerFilters(filters); setPage(1); }}
+        current={screenerFilters}
+      />
     </div>
   );
 }
