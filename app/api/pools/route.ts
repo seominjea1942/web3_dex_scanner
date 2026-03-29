@@ -19,6 +19,21 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(params.get("limit") || "20")));
     const filter = params.get("filter"); // "hot" | "gainers" | "losers"
 
+    // Screener filter params
+    const ageMin    = params.get("age_min")   ? Number(params.get("age_min"))   : null;
+    const ageMax    = params.get("age_max")   ? Number(params.get("age_max"))   : null;
+    const liqMin    = params.get("liq_min")   ? Number(params.get("liq_min"))   : null;
+    const liqMax    = params.get("liq_max")   ? Number(params.get("liq_max"))   : null;
+    const volMin    = params.get("vol_min")   ? Number(params.get("vol_min"))   : null;
+    const volMax    = params.get("vol_max")   ? Number(params.get("vol_max"))   : null;
+    const period    = params.get("period") === "1h" ? "1h" : "24h";
+    const txnsMin   = params.get("txns_min")  ? Number(params.get("txns_min"))  : null;
+    const txnsMax   = params.get("txns_max")  ? Number(params.get("txns_max"))  : null;
+    const buysMin   = params.get("buys_min")  ? Number(params.get("buys_min"))  : null;
+    const buysMax   = params.get("buys_max")  ? Number(params.get("buys_max"))  : null;
+    const sellsMin  = params.get("sells_min") ? Number(params.get("sells_min")) : null;
+    const sellsMax  = params.get("sells_max") ? Number(params.get("sells_max")) : null;
+
     const offset = (page - 1) * limit;
 
     // Valid sort columns (v2 schema)
@@ -64,12 +79,38 @@ export async function GET(req: NextRequest) {
       where += " AND p.price_change_24h < 0";
     }
 
-    // SWR cache key based on query params
-    const cacheKey = `pools:${effectiveSort}:${effectiveOrder}:${search}:${filter}:${page}:${limit}`;
+    // Screener filter WHERE clauses
+    if (ageMin !== null) {
+      where += " AND TIMESTAMPDIFF(HOUR, p.pool_created_at, NOW()) >= ?";
+      queryParams.push(ageMin);
+    }
+    if (ageMax !== null) {
+      where += " AND TIMESTAMPDIFF(HOUR, p.pool_created_at, NOW()) <= ?";
+      queryParams.push(ageMax);
+    }
+    if (liqMin !== null) { where += " AND p.liquidity_usd >= ?"; queryParams.push(liqMin); }
+    if (liqMax !== null) { where += " AND p.liquidity_usd <= ?"; queryParams.push(liqMax); }
+
+    const volCol = period === "1h" ? "COALESCE(p.volume_1h, 0)" : "p.volume_24h";
+    if (volMin !== null) { where += ` AND ${volCol} >= ?`; queryParams.push(volMin); }
+    if (volMax !== null) { where += ` AND ${volCol} <= ?`; queryParams.push(volMax); }
+
+    const txnsExpr = "(COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0))";
+    if (txnsMin !== null) { where += ` AND ${txnsExpr} >= ?`; queryParams.push(txnsMin); }
+    if (txnsMax !== null) { where += ` AND ${txnsExpr} <= ?`; queryParams.push(txnsMax); }
+    if (buysMin  !== null) { where += " AND COALESCE(p.txns_24h_buys,0) >= ?";  queryParams.push(buysMin); }
+    if (buysMax  !== null) { where += " AND COALESCE(p.txns_24h_buys,0) <= ?";  queryParams.push(buysMax); }
+    if (sellsMin !== null) { where += " AND COALESCE(p.txns_24h_sells,0) >= ?"; queryParams.push(sellsMin); }
+    if (sellsMax !== null) { where += " AND COALESCE(p.txns_24h_sells,0) <= ?"; queryParams.push(sellsMax); }
+
+    // SWR cache key based on query params (include screener filters)
+    const screenerKey = `${ageMin}-${ageMax}-${liqMin}-${liqMax}-${volMin}-${volMax}-${period}-${txnsMin}-${txnsMax}-${buysMin}-${buysMax}-${sellsMin}-${sellsMax}`;
+    const cacheKey = `pools:${effectiveSort}:${effectiveOrder}:${search}:${filter}:${page}:${limit}:${screenerKey}`;
 
     const { data: cachedResult, fromCache } = await cache.getOrFetch(
       cacheKey,
       async () => {
+        const t0 = Date.now();
         // Run count + data queries in parallel
         const [countRows, dataRows] = await Promise.all([
           conn.execute(
@@ -114,7 +155,7 @@ export async function GET(req: NextRequest) {
             [...queryParams, limit, offset]
           ) as Promise<Record<string, any>[]>,
         ]);
-        return { total: countRows[0]?.total ?? 0, rows: dataRows };
+        return { total: countRows[0]?.total ?? 0, rows: dataRows, queryMs: Date.now() - t0 };
       },
       POOLS_CACHE_TTL
     );
@@ -156,6 +197,7 @@ export async function GET(req: NextRequest) {
       limit,
       totalPages: Math.ceil(total / limit),
       fromCache,
+      queryMs: cachedResult.queryMs ?? 0,
     });
     res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=25");
     return res;

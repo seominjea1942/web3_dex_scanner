@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { RangeRow } from "./RangeRow";
+import { QUICK_PRESETS } from "./QuickFilterPills";
 import type { ScreenerFilters, ScreenerPeriod, RangeValue } from "@/lib/types";
 
 const DEFAULT_FILTERS: ScreenerFilters = {
@@ -26,15 +27,17 @@ interface FilterModalProps {
 
 export function FilterModal({ open, onClose, onApply, current }: FilterModalProps) {
   const [draft, setDraft] = useState<ScreenerFilters>(current);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Sync draft when modal opens
   useEffect(() => {
-    if (open) setDraft(current);
+    if (open) { setDraft(current); setActivePreset(null); }
   }, [open, current]);
 
   const setRange = useCallback(
     (key: keyof ScreenerFilters, field: "min" | "max", value?: number) => {
+      setActivePreset(null);
       setDraft((prev) => ({
         ...prev,
         [key]: { ...(prev[key] as RangeValue), [field]: value },
@@ -43,7 +46,7 @@ export function FilterModal({ open, onClose, onApply, current }: FilterModalProp
     []
   );
 
-  const handleReset = () => setDraft(DEFAULT_FILTERS);
+  const handleReset = () => { setDraft(DEFAULT_FILTERS); setActivePreset(null); };
 
   const handleApply = () => {
     onApply(draft);
@@ -102,6 +105,39 @@ export function FilterModal({ open, onClose, onApply, current }: FilterModalProp
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
+          {/* Quick presets */}
+          <div className="flex flex-wrap gap-1.5 pb-3">
+            {QUICK_PRESETS.map((p) => {
+              const isActive = activePreset === p.key;
+              return (
+                <button
+                  key={p.key}
+                  title={p.hint}
+                  onClick={() => {
+                    if (isActive) {
+                      setDraft(DEFAULT_FILTERS);
+                      setActivePreset(null);
+                    } else {
+                      setDraft({ ...DEFAULT_FILTERS, ...p.filters });
+                      setActivePreset(p.key);
+                    }
+                  }}
+                  className="h-7 px-2.5 rounded-full text-xs border flex items-center gap-1 transition-colors"
+                  style={{
+                    borderColor: isActive ? p.color : "var(--border)",
+                    background: isActive ? p.bg : "transparent",
+                    color: isActive ? p.color : "var(--text-muted)",
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 13 }}>{p.icon}</span>
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <Divider />
+
           {/* Section 1 — Token Attribute Ranges */}
           <RangeRow
             label="Age"

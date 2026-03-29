@@ -58,6 +58,48 @@ function applyClientJitter(pools: Pool[]): Pool[] {
   });
 }
 
+function LatencyBadge({ ms }: { ms: number }) {
+  const [showTip, setShowTip] = useState(false);
+  return (
+    <div className="flex items-center gap-1">
+      <span
+        className="h-5 px-1.5 rounded text-xs font-medium flex items-center"
+        style={{ background: "rgba(45, 212, 191, 0.1)", color: "var(--accent-teal)" }}
+      >
+        {ms}ms
+      </span>
+      <div
+        className="relative flex items-center"
+        onMouseEnter={() => setShowTip(true)}
+        onMouseLeave={() => setShowTip(false)}
+      >
+        <span
+          className="material-symbols-outlined"
+          style={{ fontSize: 14, color: "var(--text-muted)", cursor: "default" }}
+        >
+          info
+        </span>
+        {showTip && (
+          <div
+            className="absolute bottom-full mb-2 rounded-lg px-2.5 py-2 text-xs z-50 pointer-events-none whitespace-nowrap"
+            style={{
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "var(--bg-card)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+            }}
+          >
+            TiDB Cloud query latency.{" "}
+            {ms === 0 ? "Served from cache." : "Live DB response time."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PaginationBtn({ label, onClick, disabled }: { label: string; onClick: () => void; disabled: boolean }) {
   return (
     <button
@@ -184,6 +226,8 @@ interface PoolsResponse {
   total: number;
   page: number;
   totalPages: number;
+  queryMs?: number;
+  fromCache?: boolean;
 }
 
 export function PoolTable() {
@@ -194,6 +238,7 @@ export function PoolTable() {
   const [activeFilter, setActiveFilter] = useState<FilterType>(null);
   const [screenerFilters, setScreenerFilters] = useState<ScreenerFilters>(DEFAULT_SCREENER_FILTERS);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   const fetcher = useCallback(() => {
     const params = new URLSearchParams({
@@ -204,10 +249,26 @@ export function PoolTable() {
     });
     if (activeFilter) params.set("filter", activeFilter);
 
-    return fetch(`/api/pools?${params}`).then((r) => r.json()) as Promise<PoolsResponse>;
-  }, [sort, page, pageSize, activeFilter]);
+    // Screener filter params
+    const sf = screenerFilters;
+    if (sf.age.min !== undefined) params.set("age_min", String(sf.age.min));
+    if (sf.age.max !== undefined) params.set("age_max", String(sf.age.max));
+    if (sf.liquidity.min !== undefined) params.set("liq_min", String(sf.liquidity.min));
+    if (sf.liquidity.max !== undefined) params.set("liq_max", String(sf.liquidity.max));
+    if (sf.volume.min !== undefined) params.set("vol_min", String(sf.volume.min));
+    if (sf.volume.max !== undefined) params.set("vol_max", String(sf.volume.max));
+    params.set("period", sf.period);
+    if (sf.txns.min !== undefined) params.set("txns_min", String(sf.txns.min));
+    if (sf.txns.max !== undefined) params.set("txns_max", String(sf.txns.max));
+    if (sf.buys.min !== undefined) params.set("buys_min", String(sf.buys.min));
+    if (sf.buys.max !== undefined) params.set("buys_max", String(sf.buys.max));
+    if (sf.sells.min !== undefined) params.set("sells_min", String(sf.sells.min));
+    if (sf.sells.max !== undefined) params.set("sells_max", String(sf.sells.max));
 
-  const resetKey = `${sort}-${activeFilter}-${page}-${pageSize}`;
+    return fetch(`/api/pools?${params}`).then((r) => r.json()) as Promise<PoolsResponse>;
+  }, [sort, page, pageSize, activeFilter, screenerFilters]);
+
+  const resetKey = `${sort}-${activeFilter}-${page}-${pageSize}-${JSON.stringify(screenerFilters)}`;
   const { data, loading } = usePolling(fetcher, POLLING_INTERVALS.TABLE, true, resetKey);
 
   // Store the last API response as the "base" and apply client-side jitter every 5s
@@ -220,6 +281,9 @@ export function PoolTable() {
     if (newPools.length > 0) {
       basePoolsRef.current = newPools;
       setDisplayPools(newPools);
+    }
+    if (data?.queryMs !== undefined) {
+      setLatencyMs(data.queryMs);
     }
   }, [data]);
 
@@ -257,6 +321,8 @@ export function PoolTable() {
     losers: { text: "Top Losers", icon: "trending_down", color: "var(--accent-red)" },
   };
 
+  const hasScreenerActive = hasActiveScreenerFilters(screenerFilters);
+
   const headerInfo = activeFilter && filterLabel[activeFilter]
     ? filterLabel[activeFilter]
     : { text: sortLabel[sort], icon: "crown", color: "var(--accent-teal)" };
@@ -281,10 +347,17 @@ export function PoolTable() {
 
       {/* Table header */}
       <div className="px-4 pt-3 pb-2 flex items-center gap-2">
-        <span className="material-symbols-outlined" style={{ fontSize: 16, color: headerInfo.color }}>{headerInfo.icon}</span>
-        <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-          {headerInfo.text}
+        <span className="material-symbols-outlined" style={{ fontSize: 16, color: hasScreenerActive ? "var(--accent-teal)" : headerInfo.color }}>
+          {hasScreenerActive ? "filter_list" : headerInfo.icon}
         </span>
+        <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+          {hasScreenerActive && stableTotal > 0
+            ? `${stableTotal.toLocaleString()} results`
+            : headerInfo.text}
+        </span>
+        {(hasScreenerActive || !!activeFilter) && latencyMs !== null && (
+          <LatencyBadge ms={latencyMs} />
+        )}
       </div>
 
       {/* Table */}
