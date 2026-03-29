@@ -885,21 +885,16 @@ function Footer({
 }) {
   const config = ENGINE_CONFIG[engine] || ENGINE_CONFIG.fts;
   const isAdvanced = engine !== "like_fallback" && engine !== "none";
-  const hasDbBreakdown = (dbTimeMs ?? 0) > 0 && dbTimeMs !== timeMs;
-  const timingBlock = timeMs > 0 ? (
-    <span className="flex items-center gap-1.5">
-      {hasDbBreakdown && (
-        <>
-          <span className="search-query-time" title="TiDB query time">TiDB {dbTimeMs}ms</span>
-          <span className="text-[10px]" style={{ color: "var(--border-hover)" }}>·</span>
-        </>
-      )}
+  const displayMs = (dbTimeMs ?? 0) > 0 ? dbTimeMs : timeMs;
+  const timingBlock = displayMs > 0 ? (
+    <span className="flex items-center gap-1">
+      <span className="search-query-time">{displayMs}ms</span>
       <span
-        className="search-query-time"
-        style={{ color: hasDbBreakdown ? "var(--text-muted)" : undefined }}
-        title="Total API time"
+        className="material-symbols-outlined"
+        title="Time spent executing queries in TiDB — excludes network latency between client and server"
+        style={{ fontSize: 12, color: "var(--text-muted)", cursor: "help", lineHeight: 1 }}
       >
-        {hasDbBreakdown ? `API ${timeMs}ms` : `${timeMs}ms`}
+        info
       </span>
     </span>
   ) : null;
