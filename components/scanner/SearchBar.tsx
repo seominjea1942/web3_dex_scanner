@@ -132,8 +132,6 @@ export function SearchBar({}: SearchBarProps) {
   const [filtersApplied, setFiltersApplied] = useState<string[]>([]);
   const [queryTimeMs, setQueryTimeMs] = useState(0);
   const [dbTimeMs, setDbTimeMs] = useState(0);
-  const [embedTimeMs, setEmbedTimeMs] = useState(0);
-  const [embedFromCache, setEmbedFromCache] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
@@ -192,8 +190,6 @@ export function SearchBar({}: SearchBarProps) {
         setAnalyticsSort(null); // Reset sort on new query
         setQueryTimeMs(data.query_time_ms || 0);
         setDbTimeMs(data.db_time_ms || 0);
-        setEmbedTimeMs(data.embed_time_ms || 0);
-        setEmbedFromCache(data.embed_from_cache || false);
         setShowDropdown(true);
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return; // cancelled, ignore
@@ -543,8 +539,6 @@ export function SearchBar({}: SearchBarProps) {
                   strategy={searchStrategy}
                   timeMs={queryTimeMs}
                   dbTimeMs={dbTimeMs}
-                  embedTimeMs={embedTimeMs}
-                  embedFromCache={embedFromCache}
                 />
               )}
             </>
@@ -881,38 +875,19 @@ function Footer({
   strategy,
   timeMs,
   dbTimeMs,
-  embedTimeMs,
-  embedFromCache,
   label,
 }: {
   engine: string;
   strategy?: string;
   timeMs: number;
   dbTimeMs?: number;
-  embedTimeMs?: number;
-  embedFromCache?: boolean;
   label?: string;
 }) {
   const config = ENGINE_CONFIG[engine] || ENGINE_CONFIG.fts;
   const isAdvanced = engine !== "like_fallback" && engine !== "none";
-  const hasBreakdown = (embedTimeMs ?? 0) > 0 && (dbTimeMs ?? 0) > 0;
-
-  const timingBlock = hasBreakdown ? (
-    <span className="flex items-center gap-1.5">
-      <span className="search-query-time">
-        TiDB&nbsp;{dbTimeMs}ms
-      </span>
-      <span className="text-[10px]" style={{ color: "var(--border-hover)" }}>+</span>
-      <span
-        className="search-query-time"
-        style={{ color: embedFromCache ? "var(--accent-green)" : "var(--accent-orange)" }}
-        title={embedFromCache ? "Embedding served from cache" : "OpenAI embedding"}
-      >
-        AI&nbsp;{embedTimeMs}ms{embedFromCache ? "⚡" : ""}
-      </span>
-    </span>
-  ) : timeMs > 0 ? (
-    <span className="search-query-time">{timeMs}ms</span>
+  const displayMs = (dbTimeMs ?? 0) > 0 ? dbTimeMs : timeMs;
+  const timingBlock = displayMs > 0 ? (
+    <span className="search-query-time">{displayMs}ms</span>
   ) : null;
 
   return (
