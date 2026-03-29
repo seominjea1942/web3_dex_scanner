@@ -96,7 +96,7 @@ LIMIT 20`,
        description,
        FROM_UNIXTIME(timestamp / 1000) AS event_time
 FROM defi_events
-WHERE description LIKE '%whale%'
+WHERE MATCH(description) AGAINST ('whale' IN BOOLEAN MODE)
 ORDER BY timestamp DESC
 LIMIT 20`,
   },

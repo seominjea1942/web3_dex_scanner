@@ -85,7 +85,7 @@ export function SqlConsole() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const executeQuery = useCallback(async (query: string) => {
+  const executeQuery = useCallback(async (query: string, presetId?: string | null) => {
     if (!query.trim()) return;
     setLoading(true);
     setError(null);
@@ -94,7 +94,7 @@ export function SqlConsole() {
       const res = await fetch("/api/sql/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql: query }),
+        body: JSON.stringify({ sql: query, presetId: presetId ?? null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Query failed");
@@ -130,7 +130,7 @@ export function SqlConsole() {
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      executeQuery(sql);
+      executeQuery(sql, activePreset);
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "l") {
       e.preventDefault();
@@ -139,7 +139,7 @@ export function SqlConsole() {
       setError(null);
       setActivePreset(null);
     }
-  }, [sql, executeQuery]);
+  }, [sql, activePreset, executeQuery]);
 
   const handlePresetSelect = useCallback((id: string, presetSql: string) => {
     setSql(presetSql);
@@ -305,7 +305,7 @@ export function SqlConsole() {
                   {lines.length} line{lines.length > 1 ? "s" : ""}
                 </div>
                 <button
-                  onClick={() => executeQuery(sql)}
+                  onClick={() => executeQuery(sql, activePreset)}
                   disabled={loading || !sql.trim()}
                   className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium transition-all"
                   style={{

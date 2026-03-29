@@ -885,7 +885,7 @@ function Footer({
 }) {
   const config = ENGINE_CONFIG[engine] || ENGINE_CONFIG.fts;
   const isAdvanced = engine !== "like_fallback" && engine !== "none";
-  const displayMs = (dbTimeMs ?? 0) > 0 ? dbTimeMs : timeMs;
+  const displayMs = ((dbTimeMs ?? 0) > 0 ? dbTimeMs : timeMs) ?? 0;
   const timingBlock = displayMs > 0 ? (
     <span className="flex items-center gap-1">
       <span className="search-query-time">{displayMs}ms</span>
