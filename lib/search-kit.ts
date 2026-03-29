@@ -165,6 +165,13 @@ interface CacheEntry {
 
 const embeddingCache = new Map<string, CacheEntry>();
 
+// Per-request embed timing — set by getQueryEmbedding, read by the route handler
+let _lastEmbedTimeMs = 0;
+let _lastEmbedFromCache = false;
+export function getLastEmbedTiming() {
+  return { timeMs: _lastEmbedTimeMs, fromCache: _lastEmbedFromCache };
+}
+
 let openaiClient: OpenAI | null = null;
 
 function getOpenAI(): OpenAI {
@@ -177,6 +184,7 @@ function getOpenAI(): OpenAI {
 /**
  * Get embedding for a query string, with LRU cache.
  * Returns null if OPENAI_API_KEY is not set.
+ * Side-effect: updates _lastEmbedTimeMs / _lastEmbedFromCache for the route handler.
  */
 export async function getQueryEmbedding(
   query: string
@@ -184,10 +192,13 @@ export async function getQueryEmbedding(
   if (!process.env.OPENAI_API_KEY) return null;
 
   const cacheKey = query.toLowerCase().trim();
+  const t0 = performance.now();
 
   // Check cache
   const cached = embeddingCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+    _lastEmbedTimeMs = Math.round(performance.now() - t0);
+    _lastEmbedFromCache = true;
     return cached.embedding;
   }
 
@@ -200,6 +211,8 @@ export async function getQueryEmbedding(
     });
 
     const embedding = response.data[0].embedding;
+    _lastEmbedTimeMs = Math.round(performance.now() - t0);
+    _lastEmbedFromCache = false;
 
     // Evict oldest if at capacity
     if (embeddingCache.size >= CACHE_MAX) {

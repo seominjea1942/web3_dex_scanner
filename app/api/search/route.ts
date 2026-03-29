@@ -4,6 +4,7 @@ import { cache } from "@/lib/cache";
 import {
   classifyQuery,
   getQueryEmbedding,
+  getLastEmbedTiming,
   rrfMerge,
   getSearchEngineLabel,
   parseQueryFilters,
@@ -372,6 +373,8 @@ export async function GET(req: NextRequest) {
 
     const searchEngine = isFilterOnly ? "tiflash" : getSearchEngineLabel(intent, usedVector);
     const queryTimeMs = Math.round(performance.now() - start);
+    const { timeMs: embedTimeMs, fromCache: embedFromCache } = getLastEmbedTiming();
+    const dbTimeMs = Math.max(0, queryTimeMs - embedTimeMs);
 
     // Extract trader info if present
     const traderInfo = tokens.length > 0 && tokens[0]._trader_wallet
@@ -402,6 +405,9 @@ export async function GET(req: NextRequest) {
       query_interpreted: queryInterpreted,
       filters_applied: allLabels,
       query_time_ms: queryTimeMs,
+      db_time_ms: usedVector ? dbTimeMs : queryTimeMs,
+      embed_time_ms: usedVector ? embedTimeMs : 0,
+      embed_from_cache: usedVector ? embedFromCache : false,
     };
 
     return NextResponse.json(response);
