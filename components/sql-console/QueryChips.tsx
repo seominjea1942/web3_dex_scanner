@@ -89,15 +89,16 @@ LIMIT 20`,
     label: "search events",
     icon: "search",
     color: "var(--accent-purple)",
-    tooltip: "TiKV storage pushdown: LIKE filter on 100K+ event descriptions — scanned at the storage layer",
-    description: "Search on-chain events by keyword. Try changing 'whale' to 'liquidity', 'smart money', or any token name.",
+    tooltip: "TiCI full-text search: inverted index scan on 100K+ event descriptions — no LIKE, no full table scan",
+    description: "Search on-chain events by keyword using TiDB full-text search. Try changing 'whale' to 'liquidity', 'smart money', or any token name.",
     sql: `SELECT event_type, severity, dex,
        ROUND(usd_value, 2) AS usd_value,
        description,
-       FROM_UNIXTIME(timestamp / 1000) AS event_time
+       FROM_UNIXTIME(timestamp / 1000) AS event_time,
+       fts_match_word('whale', description) AS relevance
 FROM defi_events
-WHERE description LIKE '%whale%'
-ORDER BY timestamp DESC
+WHERE fts_match_word('whale', description)
+ORDER BY relevance DESC, timestamp DESC
 LIMIT 20`,
   },
   // ── Tier 3: TiCI Vector Search demos ──

@@ -126,7 +126,7 @@ export async function GET(req: NextRequest) {
               p.token_quote_address as token_quote_id,
               CONCAT(p.token_base_symbol, '/', p.token_quote_symbol) as pair_label,
               p.dex as dex_name,
-              'AMM' as pool_type,
+              COALESCE(p.pool_type, 'AMM') as pool_type,
               'solana' as chain,
               (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as makers,
               (COALESCE(p.txns_24h_buys,0) + COALESCE(p.txns_24h_sells,0)) as txns_24h,
