@@ -1,6 +1,7 @@
 import mysql from "mysql2/promise";
 
-let pool: mysql.Pool | null = null;
+// Use globalThis to survive Next.js dev hot-reload without leaking connections
+const globalForDb = globalThis as unknown as { __tidb_pool?: mysql.Pool };
 
 const getEnv = (key: string, fallback?: string, allowEmpty = false) => {
   const value = (process.env[key] ?? fallback)?.trim();
@@ -11,14 +12,14 @@ const getEnv = (key: string, fallback?: string, allowEmpty = false) => {
 };
 
 export const getPool = () => {
-  if (pool) {
-    return pool;
+  if (globalForDb.__tidb_pool) {
+    return globalForDb.__tidb_pool;
   }
 
   const sslEnabled =
     (process.env.TIDB_SSL ?? "true").trim().toLowerCase() !== "false";
 
-  pool = mysql.createPool({
+  globalForDb.__tidb_pool = mysql.createPool({
     host: getEnv("TIDB_HOST"),
     port: Number(getEnv("TIDB_PORT", "4000")),
     user: getEnv("TIDB_USER"),
@@ -32,7 +33,7 @@ export const getPool = () => {
       : undefined,
   });
 
-  return pool;
+  return globalForDb.__tidb_pool;
 };
 
 /**

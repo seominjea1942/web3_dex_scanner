@@ -2,38 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import type { SearchToken, SearchEvent } from "@/lib/types";
+import { SEARCH_CONFIG } from "@/lib/constants";
 
 /* ── Types ───────────────────────────────────────────────── */
 
-interface TokenResult {
-  address: string;
-  token_base_symbol: string;
-  token_quote_symbol: string;
-  token_base_address: string;
-  token_name: string | null;
-  price_usd: number;
-  volume_24h: number;
-  price_change_24h: number;
-  logo_url: string | null;
-  dex: string;
-  holder_count?: number | null;
-  top10_holder_pct?: number | null;
-  txns_24h?: number;
-  whale_events_24h?: number;
-  pool_created_at?: number | null;
-}
-
-interface EventResult {
-  id: number;
-  event_type: string;
-  severity: string;
-  description: string;
-  usd_value: number;
-  pool_address: string;
-  token_symbol: string | null;
-  timestamp: number;
-  dex: string;
-}
+type TokenResult = SearchToken;
+type EventResult = SearchEvent;
 
 interface TrendingData {
   gainers: TokenResult[];
@@ -139,6 +114,7 @@ export function SearchBar({}: SearchBarProps) {
   const searchTimer = useRef<NodeJS.Timeout>();
   const abortRef = useRef<AbortController>();
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchCache = useRef<Map<string, { data: any; ts: number }>>(new Map()); // eslint-disable-line @typescript-eslint/no-explicit-any
   const router = useRouter();
 
   /* ── Rotate placeholder ──────────────────────────────── */
@@ -162,6 +138,21 @@ export function SearchBar({}: SearchBarProps) {
   }, [trending]);
 
   /* ── Debounced search API call ───────────────────────── */
+  const CACHE_TTL_MS = SEARCH_CONFIG.CLIENT_CACHE_TTL_MS;
+
+  const applySearchData = useCallback((data: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    setTokenResults(data.tokens || []);
+    setEventResults(data.events || []);
+    setSearchEngine(data.search_engine || "");
+    setSearchStrategy(data.search_strategy || "");
+    setQueryInterpreted(data.query_interpreted);
+    setFiltersApplied(data.filters_applied || []);
+    setAnalyticsSort(null);
+    setQueryTimeMs(data.query_time_ms || 0);
+    setDbTimeMs(data.db_time_ms || 0);
+    setShowDropdown(true);
+  }, []);
+
   const fetchResults = useCallback((query: string) => {
     clearTimeout(searchTimer.current);
     // Abort any in-flight request so it doesn't hold DB connections
@@ -171,6 +162,15 @@ export function SearchBar({}: SearchBarProps) {
       setEventResults([]);
       return;
     }
+
+    // Check client-side cache first
+    const cached = searchCache.current.get(query);
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+      applySearchData(cached.data);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     searchTimer.current = setTimeout(async () => {
       const controller = new AbortController();
@@ -181,16 +181,14 @@ export function SearchBar({}: SearchBarProps) {
           { signal: controller.signal }
         );
         const data = await res.json();
-        setTokenResults(data.tokens || []);
-        setEventResults(data.events || []);
-        setSearchEngine(data.search_engine || "");
-        setSearchStrategy(data.search_strategy || "");
-        setQueryInterpreted(data.query_interpreted);
-        setFiltersApplied(data.filters_applied || []);
-        setAnalyticsSort(null); // Reset sort on new query
-        setQueryTimeMs(data.query_time_ms || 0);
-        setDbTimeMs(data.db_time_ms || 0);
-        setShowDropdown(true);
+        // Cache the result
+        searchCache.current.set(query, { data, ts: Date.now() });
+        // Evict old entries if cache grows too large
+        if (searchCache.current.size > SEARCH_CONFIG.CLIENT_CACHE_MAX_ENTRIES) {
+          const oldest = searchCache.current.keys().next().value;
+          if (oldest !== undefined) searchCache.current.delete(oldest);
+        }
+        applySearchData(data);
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return; // cancelled, ignore
         setTokenResults([]);
@@ -198,8 +196,8 @@ export function SearchBar({}: SearchBarProps) {
       } finally {
         setLoading(false);
       }
-    }, 300);
-  }, []);
+    }, SEARCH_CONFIG.DEBOUNCE_MS);
+  }, [applySearchData]);
 
   useEffect(() => {
     fetchResults(local);

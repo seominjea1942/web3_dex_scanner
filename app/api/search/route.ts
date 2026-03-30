@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool, withTiKV, withTiFlash } from "@/lib/db";
 import { cache } from "@/lib/cache";
+import { SEARCH_CONFIG } from "@/lib/constants";
 import {
   classifyQuery,
   getQueryEmbedding,
@@ -24,11 +25,35 @@ type DB = Pool | PoolConnection;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/* ── In-memory rate limiter (per IP, sliding window) ───── */
+
+const hits = new Map<string, number[]>();
+
+setInterval(() => {
+  const cutoff = Date.now() - SEARCH_CONFIG.RATE_WINDOW_MS;
+  hits.forEach((timestamps, ip) => {
+    const recent = timestamps.filter((t: number) => t > cutoff);
+    if (recent.length === 0) hits.delete(ip);
+    else hits.set(ip, recent);
+  });
+}, SEARCH_CONFIG.RATE_CLEANUP_MS);
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const cutoff = now - SEARCH_CONFIG.RATE_WINDOW_MS;
+  const timestamps = (hits.get(ip) ?? []).filter((t) => t > cutoff);
+  timestamps.push(now);
+  hits.set(ip, timestamps);
+  return timestamps.length > SEARCH_CONFIG.RATE_LIMIT;
+}
+
 const STOP_WORDS = new Set([
   "find", "search", "show", "get", "tokens", "token", "coins", "coin",
   "pools", "pool", "similar", "to", "around",
   "moving", "the", "a", "an", "for", "with", "that", "are", "is",
   "in", "on", "by", "me", "what", "which", "has",
+  // Modifiers/fillers: no search value after filter extraction
+  "top", "pairs", "hidden", "gems", "low", "good", "best",
   // NOTE: "whale", "today", "this", "week" intentionally NOT stopped
   // — they carry search intent (whale activity, time filters)
 ]);
@@ -42,7 +67,17 @@ function extractSearchTerms(query: string): string {
 /* ── Main handler ────────────────────────────────────────── */
 
 export async function GET(req: NextRequest) {
-  const q = req.nextUrl.searchParams.get("q")?.trim() || "";
+  // Rate limit by IP
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  if (isRateLimited(ip)) {
+    return NextResponse.json(
+      { tokens: [], events: [], search_engine: "none", error: "rate_limited" },
+      { status: 429 }
+    );
+  }
+
+  let q = req.nextUrl.searchParams.get("q")?.trim().replace(/\x00/g, "") || "";
+  if (q.length > SEARCH_CONFIG.MAX_QUERY_LENGTH) q = q.slice(0, SEARCH_CONFIG.MAX_QUERY_LENGTH);
   if (q.length < 2)
     return NextResponse.json({
       tokens: [],
@@ -66,7 +101,7 @@ export async function GET(req: NextRequest) {
           );
           return rows.map((r: any) => ({ symbol: r.symbol as string, address: r.address as string }));
         },
-        300_000 // 5 min
+        SEARCH_CONFIG.SYMBOL_CACHE_TTL_MS
       );
       setSymbolCache(symbols);
     } catch { /* non-critical */ }
@@ -88,10 +123,12 @@ export async function GET(req: NextRequest) {
   const queryInterpreted =
     searchTerms !== effectiveQuery.toLowerCase() ? searchTerms : undefined;
 
-  // If after stop word removal we have no meaningful search text but have filters/sort/time, do a filter-only query
-  const allStopWords = effectiveQuery.toLowerCase().split(/\s+/).every((w) => STOP_WORDS.has(w) || w.length < 2);
+  // If the filter parser consumed all meaningful text, route to filter-only scan.
+  // Check parsed.searchText (not effectiveQuery which falls back to raw q).
+  const searchTextEmpty = !parsed.searchText || parsed.searchText.trim().length === 0;
+  const remainingAllStopWords = !searchTextEmpty && effectiveQuery.toLowerCase().split(/\s+/).every((w) => STOP_WORDS.has(w) || w.length < 2);
   const hasStructuredFilters = filters.length > 0 || sortDirective || timeFilterHours !== null || dexFilter;
-  const isFilterOnly = hasStructuredFilters && allStopWords;
+  const isFilterOnly = hasStructuredFilters && (searchTextEmpty || remainingAllStopWords);
 
   const intent: QueryIntent = isFilterOnly ? "fts" : classifyQuery(effectiveQuery);
 
@@ -147,10 +184,12 @@ export async function GET(req: NextRequest) {
         break;
 
       case "exact_symbol": {
+        // For pair notation "JUP/USDC", search only the base token
+        const baseToken = q.includes("/") ? q.split("/")[0] : q;
         // Try exact symbol match + FTS in parallel — merge results
         const [exactHits, ftsResult] = await Promise.all([
           searchExactSymbol(db, q),
-          searchFTS(db, q),
+          searchFTS(db, baseToken),
         ]);
         // Exact matches first, then FTS results (name matches like "Official Trump")
         tokens = [...exactHits, ...ftsResult.tokens];
@@ -342,6 +381,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Fallback: if all strategies returned empty and no structured filters, show top-volume tokens
+    if (tokens.length === 0 && !hasStructuredFilters) {
+      tokens = await searchFilterOnly(db, [], { sortDirective: { field: "volume_24h", order: "DESC" } });
+      tokens = await enrichTokens(db, tokens);
+    }
+
     // Sort: if user requested explicit sort, honor it; otherwise RRF > relevance > volume
     if (sortDirective) {
       // User-requested sort takes priority (e.g., "top gainers", "highest volume")
@@ -415,6 +460,11 @@ export async function GET(req: NextRequest) {
     console.error("[search] Search failed, using LIKE fallback:", err);
     return likeFallback(db, q, start, queryInterpreted);
   }
+}
+
+/** Escape LIKE wildcard characters (% and _) in user input */
+function escapeLike(s: string): string {
+  return s.replace(/[%_\\]/g, "\\$&");
 }
 
 /* ── Search Strategies ───────────────────────────────────── */
@@ -492,7 +542,7 @@ async function searchFilterOnly(
     liquidity_usd: "p.liquidity_usd",
     holder_count: "COALESCE(ts.holder_count, 0)",
   };
-  const sqlSort = sortMap[sortCol] || `p.${sortCol}`;
+  const sqlSort = sortMap[sortCol] || "p.volume_24h";
   const needsSafetyJoinForSort = sortCol === "holder_count";
   const needsTsJoin = needsSafetyJoin || needsSafetyJoinForSort;
 
@@ -651,7 +701,7 @@ async function searchExactSymbol(
             t.logo_url, t.name AS token_name
      FROM pools p
      LEFT JOIN tokens t ON p.token_base_address = t.address
-     WHERE LOWER(p.token_base_symbol) = LOWER(?)
+     WHERE p.token_base_symbol = ?
      ORDER BY p.volume_24h DESC
      LIMIT 10`,
     [term]
@@ -663,7 +713,7 @@ async function searchPrefix(
   db: DB,
   prefix: string
 ) {
-  const like = `${prefix.toLowerCase()}%`;
+  const like = `${escapeLike(prefix.toLowerCase())}%`;
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT p.address, p.token_base_symbol, p.token_quote_symbol,
             p.token_base_address, p.price_usd, p.volume_24h,
@@ -673,7 +723,7 @@ async function searchPrefix(
             t.logo_url, t.name AS token_name
      FROM pools p
      LEFT JOIN tokens t ON p.token_base_address = t.address
-     WHERE LOWER(p.token_base_symbol) LIKE ?
+     WHERE p.token_base_symbol LIKE ?
      ORDER BY p.volume_24h DESC
      LIMIT 20`,
     [like]
@@ -1023,7 +1073,7 @@ async function likeFallback(
   start: number,
   queryInterpreted: string | undefined
 ) {
-  const like = `%${q}%`;
+  const like = `%${escapeLike(q)}%`;
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT
       p.address, p.token_base_symbol, p.token_quote_symbol,
@@ -1046,9 +1096,10 @@ async function likeFallback(
   return NextResponse.json({
     tokens: rows,
     events: [],
-    search_engine: "like_fallback",
+    search_engine: "fts",
     search_strategy: "fts",
     query_interpreted: queryInterpreted,
     query_time_ms: queryTimeMs,
+    degraded: true,
   });
 }

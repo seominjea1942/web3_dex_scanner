@@ -2,6 +2,7 @@
  * Search Kit — query classification, RRF merge, embedding cache
  */
 import OpenAI from "openai";
+import { SEARCH_CONFIG } from "@/lib/constants";
 
 /* ── Query Intent Classification ────────────────────────── */
 
@@ -117,7 +118,7 @@ export interface MergedResult {
  */
 export function rrfMerge(
   lists: { name: string; results: RankedResult[] }[],
-  k = 60
+  k = SEARCH_CONFIG.RRF_K
 ): MergedResult[] {
   const scores = new Map<string, { score: number; sources: string[]; data: Record<string, any> }>(); // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -155,8 +156,8 @@ export function rrfMerge(
 /* ── Embedding Cache + Helper ───────────────────────────── */
 
 const EMBED_MODEL = "text-embedding-3-small";
-const CACHE_MAX = 1000;
-const CACHE_TTL_MS = 3600_000; // 1 hour
+const CACHE_MAX = SEARCH_CONFIG.EMBED_CACHE_MAX;
+const CACHE_TTL_MS = SEARCH_CONFIG.EMBED_CACHE_TTL_MS;
 
 interface CacheEntry {
   embedding: number[];
@@ -357,6 +358,12 @@ const HEURISTIC_TRIGGERS: Record<string, HeuristicRule> = {
     ],
     sort: { field: "volume_24h", order: "DESC" },
   },
+  "gems": {
+    filters: [
+      { field: "market_cap", op: "<=", value: 2_000_000, label: "mcap ≤ $2M (gem)" },
+    ],
+    sort: { field: "volume_24h", order: "DESC" },
+  },
   "gem": {
     filters: [
       { field: "market_cap", op: "<=", value: 2_000_000, label: "mcap ≤ $2M (gem)" },
@@ -435,6 +442,7 @@ const TIME_FILTERS: { re: RegExp; hours: number; label: string }[] = [
   { re: /\btoday\b/i, hours: 24, label: "today" },
   { re: /\b(?:this|last|past)\s*week\b/i, hours: 168, label: "this week" },
   { re: /\b(?:last|past)\s*24\s*h(?:ours?)?\b/i, hours: 24, label: "24h" },
+  { re: /\b24\s*h\b/i, hours: 24, label: "24h" },  // bare "24h" without "last/past" prefix
   { re: /\bnew(?:est|ly)?\s+(?:tokens?|pairs?|pools?|launches?|listed)\b/i, hours: 24, label: "new (24h)" },
   { re: /\b(?:just|recently)\s+(?:launched|listed|created)\b/i, hours: 1, label: "just launched" },
   { re: /\b(?:fresh)\s+(?:pools?|pairs?|tokens?)\b/i, hours: 6, label: "fresh (6h)" },
@@ -512,12 +520,13 @@ export function parseQueryFilters(query: string): ParsedQuery {
     }
   }
 
-  // ── 0b. Extract sort directives (check multi-word first) ──
+  // ── 0b. Extract sort directives (check multi-word first, word-boundary match) ──
   const lowerText2 = text.toLowerCase();
   for (const [trigger, directive] of Object.entries(SORT_TRIGGERS).sort((a, b) => b[0].length - a[0].length)) {
-    if (lowerText2.includes(trigger)) {
+    const triggerRe = new RegExp(`\\b${trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "i");
+    if (triggerRe.test(lowerText2)) {
       sortDirective = directive;
-      text = text.replace(new RegExp(trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "gi"), " ");
+      text = text.replace(triggerRe, " ");
       break;
     }
   }
@@ -770,8 +779,17 @@ export function parseQueryFilters(query: string): ParsedQuery {
 }
 
 /**
- * Build SQL WHERE clause fragments for parsed filters
+ * Build SQL WHERE clause fragments for parsed filters.
+ * Only allows known column names to prevent SQL injection via field interpolation.
  */
+const ALLOWED_FILTER_FIELDS = new Set([
+  "price_usd", "volume_24h", "liquidity_usd", "market_cap", "price_change_24h",
+  "price_change_1h", "price_change_6h", "price_change_5m",
+  "volume_1h", "volume_6h", "volume_5m",
+]);
+
+const ALLOWED_OPS = new Set([">=", "<=", ">", "<", "="]);
+
 export function buildFilterSQL(filters: SearchFilter[]): { where: string; params: number[] } {
   if (filters.length === 0) return { where: "", params: [] };
 
@@ -779,9 +797,12 @@ export function buildFilterSQL(filters: SearchFilter[]): { where: string; params
   const params: number[] = [];
 
   for (const f of filters) {
+    if (!ALLOWED_FILTER_FIELDS.has(f.field) || !ALLOWED_OPS.has(f.op)) continue;
     clauses.push(`p.${f.field} ${f.op} ?`);
     params.push(f.value);
   }
+
+  if (clauses.length === 0) return { where: "", params: [] };
 
   return {
     where: " AND " + clauses.join(" AND "),
@@ -853,7 +874,7 @@ function levenshtein(a: string, b: string): number {
  */
 let symbolCache: { symbol: string; address: string }[] = [];
 let symbolCacheTs = 0;
-const SYMBOL_CACHE_TTL = 300_000; // 5 minutes
+const SYMBOL_CACHE_TTL = SEARCH_CONFIG.SYMBOL_CACHE_TTL_MS;
 
 export function setSymbolCache(symbols: { symbol: string; address: string }[]) {
   symbolCache = symbols;
@@ -870,7 +891,7 @@ export function isSymbolCacheStale(): boolean {
  */
 export function fuzzyMatchSymbol(
   query: string,
-  maxDistance = 2,
+  maxDistance: number = SEARCH_CONFIG.FUZZY_MAX_DISTANCE,
   limit = 10
 ): { symbol: string; address: string; distance: number }[] {
   const q = query.toUpperCase();

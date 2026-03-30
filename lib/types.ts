@@ -106,3 +106,63 @@ export interface ScreenerFilters {
   buys: RangeValue;      // txns_24h_buys (24h only)
   sells: RangeValue;     // txns_24h_sells (24h only)
 }
+
+/* ── Search types (shared between API and UI) ─────────── */
+
+export interface SearchToken {
+  address: string;
+  token_base_symbol: string;
+  token_quote_symbol: string;
+  token_base_address: string;
+  token_name: string | null;
+  logo_url: string | null;
+  price_usd: number;
+  volume_24h: number;
+  price_change_24h: number;
+  dex: string;
+  pool_created_at: string | number | null;
+  txns_24h_buys: number;
+  txns_24h_sells: number;
+  liquidity_usd?: number;
+  market_cap?: number;
+  relevance?: number;
+  // Enrichment fields
+  holder_count?: number | null;
+  top10_holder_pct?: number | null;
+  is_mintable?: number | null;
+  is_freezable?: number | null;
+  is_verified?: number;
+  is_lp_burned?: number;
+  lp_locked?: number;
+  risk_score?: number;
+  txns_24h?: number;
+  whale_events_24h?: number;
+  search_popularity?: number;
+  unique_traders_24h?: number;
+}
+
+export interface SearchEvent {
+  id: number;
+  event_type: string;
+  severity: string;
+  description: string;
+  usd_value: number;
+  pool_address: string;
+  token_symbol: string | null;
+  timestamp: number;
+  dex: string;
+}
+
+export interface SearchResponse {
+  tokens: SearchToken[];
+  events: SearchEvent[];
+  search_engine: string;
+  search_strategy: string;
+  query_interpreted?: string;
+  filters_applied: string[];
+  query_time_ms: number;
+  db_time_ms?: number;
+  embed_time_ms?: number;
+  embed_from_cache?: boolean;
+  degraded?: boolean;
+}
