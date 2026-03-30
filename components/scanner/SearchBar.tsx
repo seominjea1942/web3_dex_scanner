@@ -299,11 +299,14 @@ export function SearchBar({}: SearchBarProps) {
             : "none",
         }}
       />
-      {local && (
+      {(local || (showDropdown && (showTrending || hasQuery))) && (
         <button
-          onClick={() => {
+          onMouseDown={(e) => {
+            e.preventDefault(); // prevent blur race
             setLocal("");
             setShowDropdown(false);
+            setIsFocused(false);
+            (e.currentTarget.previousElementSibling as HTMLInputElement)?.blur();
           }}
           className="absolute right-3 top-1/2 -translate-y-1/2"
           style={{ color: "var(--text-muted)" }}
@@ -317,13 +320,16 @@ export function SearchBar({}: SearchBarProps) {
       {/* ── Dropdown ──────────────────────────────────── */}
       {showDropdown && (showTrending || hasQuery) && (
         <div
-          className="absolute top-full left-0 mt-1.5 z-50 rounded-xl border overflow-hidden flex flex-col"
+          className="absolute top-full left-0 mt-1.5 z-50 rounded-xl border overflow-hidden flex flex-col w-[calc(100vw-2rem)] md:w-auto md:min-w-[460px] max-h-[calc(100vh-var(--search-dropdown-top,300px)-1rem)] md:max-h-[520px]"
+          ref={(el) => {
+            if (el) {
+              const top = el.getBoundingClientRect().top;
+              el.style.setProperty("--search-dropdown-top", `${top}px`);
+            }
+          }}
           style={{
             background: "var(--bg-card)",
             borderColor: "var(--border)",
-            maxHeight: 520,
-            minWidth: 460,
-            width: "max(100%, 460px)",
             boxShadow: "0 12px 32px rgba(0,0,0,0.4)",
           }}
         >
@@ -386,28 +392,7 @@ export function SearchBar({}: SearchBarProps) {
           {hasQuery && (
             <>
               {/* Interpreted query hint */}
-              {queryInterpreted &&
-                queryInterpreted !== local.toLowerCase() &&
-                hasResults && (
-                  <div
-                    className="px-4 py-2 text-[11px] border-b flex items-center gap-1.5"
-                    style={{
-                      borderColor: "var(--border)",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    <span
-                      className="material-symbols-outlined"
-                      style={{ fontSize: 13 }}
-                    >
-                      auto_awesome
-                    </span>
-                    Showing results for:{" "}
-                    <strong style={{ color: "var(--text-secondary)" }}>
-                      {queryInterpreted}
-                    </strong>
-                  </div>
-                )}
+              {/* Query interpretation hint removed for cleaner UX */}
 
               {/* Active filters */}
               {filtersApplied.length > 0 && (
@@ -831,51 +816,9 @@ function EventRow({
   );
 }
 
-const ENGINE_CONFIG: Record<string, { icon: string; label: string; bg: string; color: string }> = {
-  fts: {
-    icon: "auto_awesome",
-    label: "TiDB Full-Text Search",
-    bg: "linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(219, 52, 242, 0.05))",
-    color: "var(--accent-blue)",
-  },
-  vector: {
-    icon: "neurology",
-    label: "TiDB Vector Search",
-    bg: "linear-gradient(135deg, rgba(139, 92, 246, 0.10), rgba(219, 52, 242, 0.06))",
-    color: "#8B5CF6",
-  },
-  hybrid: {
-    icon: "merge",
-    label: "TiDB Hybrid Search (FTS + Vector)",
-    bg: "linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08))",
-    color: "#6366F1",
-  },
-  exact: {
-    icon: "pin",
-    label: "TiDB Index Lookup",
-    bg: "linear-gradient(135deg, rgba(48, 209, 88, 0.08), rgba(99, 102, 241, 0.05))",
-    color: "var(--accent-green)",
-  },
-  prefix: {
-    icon: "text_fields",
-    label: "TiDB Prefix Search",
-    bg: "linear-gradient(135deg, rgba(48, 209, 88, 0.08), rgba(99, 102, 241, 0.05))",
-    color: "var(--accent-green)",
-  },
-  tiflash: {
-    icon: "speed",
-    label: "TiDB TiFlash Analytics",
-    bg: "linear-gradient(135deg, rgba(255, 141, 40, 0.10), rgba(255, 66, 89, 0.06))",
-    color: "var(--accent-orange)",
-  },
-};
-
 function Footer({
-  engine,
-  strategy,
   timeMs,
   dbTimeMs,
-  label,
 }: {
   engine: string;
   strategy?: string;
@@ -883,82 +826,51 @@ function Footer({
   dbTimeMs?: number;
   label?: string;
 }) {
-  const config = ENGINE_CONFIG[engine] || ENGINE_CONFIG.fts;
-  const isAdvanced = engine !== "like_fallback" && engine !== "none";
   const displayMs = ((dbTimeMs ?? 0) > 0 ? dbTimeMs : timeMs) ?? 0;
-  const timingBlock = displayMs > 0 ? (
-    <span className="flex items-center gap-1">
-      <span className="search-query-time">{displayMs}ms</span>
-      <span
-        className="material-symbols-outlined"
-        title="Server-side query time — includes network travel to TiDB Cloud Singapore. Actual TiDB execution is a fraction of this."
-        style={{ fontSize: 12, color: "var(--text-muted)", cursor: "help", lineHeight: 1 }}
-      >
-        info
-      </span>
-    </span>
-  ) : null;
 
   return (
     <div
-      className="px-4 py-2.5 flex items-center justify-center gap-2 border-t"
+      className="px-4 py-3 flex items-center justify-center gap-2.5 border-t relative overflow-hidden"
       style={{
         borderColor: "var(--border)",
-        background: isAdvanced ? config.bg : "var(--bg-secondary)",
+        background: "linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(139, 92, 246, 0.08), rgba(219, 52, 242, 0.06))",
       }}
     >
-      {isAdvanced ? (
+      {/* Animated shimmer overlay */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 50%, transparent 100%)",
+          animation: "search-skeleton-shimmer 3s ease-in-out infinite",
+        }}
+      />
+      <span
+        className="material-symbols-outlined search-badge-sparkle"
+        style={{ fontSize: 15, color: "#8B5CF6" }}
+      >
+        auto_awesome
+      </span>
+      <a
+        href="https://www.pingcap.com/ai/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[11px] font-medium hover:underline relative"
+        style={{ color: "var(--text-secondary)" }}
+      >
+        Powered by{" "}
+        <span className="search-badge-gradient-text" style={{ fontWeight: 700 }}>TiCI</span>
+      </a>
+      {displayMs > 0 && (
         <>
-          <span
-            className="material-symbols-outlined search-badge-sparkle"
-            style={{ fontSize: 14, color: config.color }}
-          >
-            {config.icon}
-          </span>
-          <span
-            className="text-[11px] font-medium"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            {label ? `${label} ` : ""}Powered by{" "}
-            <span className="search-badge-gradient-text">
-              {config.label}
-            </span>
-          </span>
-          {strategy && strategy !== engine && (
-            <span
-              className="text-[9px] px-1.5 py-0.5 rounded"
-              style={{
-                background: `${config.color}15`,
-                color: config.color,
-              }}
-            >
-              {strategy}
-            </span>
-          )}
-          {timingBlock && (
-            <>
-              <span className="text-[10px]" style={{ color: "var(--border-hover)" }}>|</span>
-              {timingBlock}
-            </>
-          )}
-        </>
-      ) : (
-        <>
+          <span className="text-[10px]" style={{ color: "rgba(139, 92, 246, 0.3)" }}>•</span>
+          <span className="search-query-time" style={{ color: "var(--accent-green)" }}>{displayMs}ms</span>
           <span
             className="material-symbols-outlined"
-            style={{ fontSize: 14, color: "var(--text-muted)" }}
+            title="Server-side query time — includes network travel to TiDB Cloud Singapore. Actual TiDB execution is a fraction of this."
+            style={{ fontSize: 12, color: "var(--text-muted)", cursor: "help", lineHeight: 1 }}
           >
-            search
+            info
           </span>
-          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-            Basic keyword match
-          </span>
-          {timingBlock && (
-            <>
-              <span className="text-[10px]" style={{ color: "var(--border-hover)" }}>|</span>
-              {timingBlock}
-            </>
-          )}
         </>
       )}
     </div>

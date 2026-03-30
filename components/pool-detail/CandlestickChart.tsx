@@ -89,7 +89,12 @@ export function CandlestickChart({ poolAddress, timeRange, onTimeRangeChange, mo
           chartRef.current = null;
         }
 
-        const chartHeight = mobileFullHeight ? containerRef.current.clientHeight || 500 : 340;
+        let chartHeight = 340;
+        if (mobileFullHeight) {
+          // Calculate available height: viewport - navbar+tabs(94) - bottomNav(56) - toolbar+badge(~90) - padding(32) - gap(12) - border(2)
+          const available = window.innerHeight - 94 - 56 - 90 - 32 - 12 - 2;
+          chartHeight = Math.max(available, 250);
+        }
         const chart = createChart(containerRef.current, {
           width: containerRef.current.clientWidth,
           height: chartHeight,
@@ -182,7 +187,11 @@ export function CandlestickChart({ poolAddress, timeRange, onTimeRangeChange, mo
           if (cancelled) return;
           for (const entry of entries) {
             try {
-              chart.applyOptions({ width: entry.contentRect.width });
+              const { width, height } = entry.contentRect;
+              chart.applyOptions({ width });
+              if (mobileFullHeight && height > 0) {
+                chart.applyOptions({ height });
+              }
             } catch (_e) {
               // chart may already be disposed
             }
@@ -212,7 +221,7 @@ export function CandlestickChart({ poolAddress, timeRange, onTimeRangeChange, mo
   }, [poolAddress, timeRange, mobileFullHeight]);
 
   return (
-    <div className={mobileFullHeight ? "flex flex-col flex-1 min-h-0" : ""}>
+    <div className={mobileFullHeight ? "flex flex-col flex-1 min-h-0 overflow-hidden" : ""}>
       {/* Time range selector + LIVE + metadata bar */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
         {/* Interval buttons — each = candle size */}
@@ -234,7 +243,7 @@ export function CandlestickChart({ poolAddress, timeRange, onTimeRangeChange, mo
 
         {/* LIVE + data points — emphasized */}
         <div
-          className="flex items-center gap-2.5 ml-auto px-3 py-1.5 rounded-lg"
+          className="flex items-center gap-2.5 md:ml-auto px-3 py-1.5 rounded-lg"
           style={{ background: "rgba(48, 209, 88, 0.08)", border: "1px solid rgba(48, 209, 88, 0.2)" }}
         >
           <span
@@ -259,7 +268,7 @@ export function CandlestickChart({ poolAddress, timeRange, onTimeRangeChange, mo
       </div>
 
       {/* Chart container with OHLCV overlay */}
-      <div className={`relative ${mobileFullHeight ? "flex-1 min-h-0" : ""}`}>
+      <div className={`relative ${mobileFullHeight ? "flex-1 min-h-0 overflow-hidden" : ""}`}>
         <div
           ref={containerRef}
           className={`rounded-lg overflow-hidden ${mobileFullHeight ? "h-full" : ""}`}

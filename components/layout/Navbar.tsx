@@ -81,8 +81,8 @@ export function Navbar({ activePage = "screener", onNavigate }: NavbarProps) {
             }}
           >
             <img src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png" alt="Solana" className="w-5 h-5 rounded-full" />
-            Solana
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>expand_more</span>
+            <span className="hidden md:inline">Solana</span>
+            <span className="material-symbols-outlined hidden md:inline" style={{ fontSize: 16 }}>expand_more</span>
           </button>
           {showChainMenu && (
             <div

@@ -288,7 +288,7 @@ export function QueryChips({ activePreset, onSelect, onClear, disabled, onSchema
       {/* Custom styled tooltip — fixed to viewport so overflow doesn't clip */}
       {hoveredPreset && (
         <div
-          className="fixed z-[9999] pointer-events-none"
+          className="fixed z-[9999] pointer-events-none hidden md:block"
           style={{
             left: tooltipPos.x,
             top: tooltipPos.y,

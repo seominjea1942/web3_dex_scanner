@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { formatPrice, formatCompact, truncateAddress } from "@/lib/format";
 
 interface Transaction {
@@ -55,6 +55,29 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
   const [page, setPage] = useState(1);
   const prevIdsRef = useRef<Set<string>>(new Set());
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (direction !== "all") count++;
+    count += walletTypes.size;
+    if (minAmount != null) count++;
+    if (timeRange) count++;
+    return count;
+  }, [direction, walletTypes, minAmount, timeRange]);
+
+  // Close popover on outside click
+  useEffect(() => {
+    if (!showMobileFilters) return;
+    const handler = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
+        setShowMobileFilters(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showMobileFilters]);
 
   const fetchTxns = useCallback(async () => {
     const params = new URLSearchParams();
@@ -107,7 +130,7 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
 
   return (
     <div
-      className="rounded-lg border overflow-hidden"
+      className="rounded-lg border overflow-hidden flex flex-col h-full"
       style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}
     >
       {/* Header */}
@@ -116,29 +139,166 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
           <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--accent-teal)" }}>receipt_long</span>
           <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Transactions</span>
         </div>
-        {/* Direction tabs */}
-        <div className="flex items-center rounded-md overflow-hidden border" style={{ borderColor: "var(--border)" }}>
-          {DIRECTION_TABS.map((tab) => {
-            const active = direction === tab.toLowerCase();
-            return (
-              <button
-                key={tab}
-                onClick={() => { setDirection(tab.toLowerCase()); setPage(1); }}
-                className="px-3 py-1 text-xs font-medium transition-colors"
+        <div className="flex items-center gap-2">
+          {/* Mobile filter button */}
+          <div className="relative md:hidden" ref={filterRef}>
+            <button
+              onClick={() => setShowMobileFilters((v) => !v)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-colors"
+              style={{
+                background: showMobileFilters || activeFilterCount > 0 ? "var(--bg-hover)" : "transparent",
+                borderColor: activeFilterCount > 0 ? "var(--accent-teal)" : "var(--border)",
+                color: activeFilterCount > 0 ? "var(--accent-teal)" : "var(--text-muted)",
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>tune</span>
+              Filter
+              {activeFilterCount > 0 && (
+                <span
+                  className="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold"
+                  style={{ background: "var(--accent-teal)", color: "#000" }}
+                >
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Mobile filter popover */}
+            {showMobileFilters && (
+              <div
+                className="absolute right-0 top-full mt-2 z-50 rounded-lg border p-3 flex flex-col gap-3"
                 style={{
-                  background: active ? "var(--bg-hover)" : "transparent",
-                  color: active ? "var(--text-primary)" : "var(--text-muted)",
+                  background: "var(--bg-card)",
+                  borderColor: "var(--border)",
+                  boxShadow: "0 12px 32px rgba(0,0,0,0.4)",
+                  width: "calc(100vw - 2rem)",
+                  maxWidth: 320,
                 }}
               >
-                {tab}
-              </button>
-            );
-          })}
+                {/* Direction */}
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-muted)" }}>Direction</div>
+                  <div className="flex items-center gap-1">
+                    {DIRECTION_TABS.map((tab) => {
+                      const active = direction === tab.toLowerCase();
+                      return (
+                        <button
+                          key={tab}
+                          onClick={() => { setDirection(tab.toLowerCase()); setPage(1); }}
+                          className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+                          style={{
+                            background: active ? "var(--bg-hover)" : "transparent",
+                            color: active ? "var(--text-primary)" : "var(--text-muted)",
+                            border: `1px solid ${active ? "var(--accent-teal)" : "var(--border)"}`,
+                          }}
+                        >
+                          {tab}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Wallet type */}
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-muted)" }}>Wallet Type</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {WALLET_TYPES.map((wt) => {
+                      const active = walletTypes.has(wt);
+                      return (
+                        <button
+                          key={wt}
+                          onClick={() => toggleWalletType(wt)}
+                          className="flex items-center gap-1 px-2 py-1.5 rounded-full text-xs border transition-colors"
+                          style={{
+                            background: active ? "var(--bg-hover)" : "transparent",
+                            borderColor: active ? "var(--accent-teal)" : "var(--border)",
+                            color: active ? "var(--text-primary)" : "var(--text-muted)",
+                          }}
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: 12 }}>{WALLET_ICONS[wt]}</span>
+                          {wt.replace("_", " ")}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Min amount */}
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-muted)" }}>Min Amount</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {AMOUNT_FILTERS.map((amt) => {
+                      const active = minAmount === amt;
+                      return (
+                        <button
+                          key={amt}
+                          onClick={() => { setMinAmount(active ? null : amt); setPage(1); }}
+                          className="px-2.5 py-1.5 rounded-full text-xs border transition-colors"
+                          style={{
+                            background: active ? "var(--bg-hover)" : "transparent",
+                            borderColor: active ? "var(--accent-teal)" : "var(--border)",
+                            color: active ? "var(--text-primary)" : "var(--text-muted)",
+                          }}
+                        >
+                          ${amt >= 1000 ? `${amt / 1000}K` : amt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Time range */}
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-muted)" }}>Time Range</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TIME_RANGES.map((tr) => {
+                      const active = timeRange === tr;
+                      return (
+                        <button
+                          key={tr}
+                          onClick={() => { setTimeRange(active ? "" : tr); setPage(1); }}
+                          className="px-2.5 py-1.5 rounded-full text-xs border transition-colors"
+                          style={{
+                            background: active ? "var(--bg-hover)" : "transparent",
+                            borderColor: active ? "var(--accent-teal)" : "var(--border)",
+                            color: active ? "var(--text-primary)" : "var(--text-muted)",
+                          }}
+                        >
+                          {tr}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Direction tabs — desktop only */}
+          <div className="hidden md:flex items-center rounded-md overflow-hidden border" style={{ borderColor: "var(--border)" }}>
+            {DIRECTION_TABS.map((tab) => {
+              const active = direction === tab.toLowerCase();
+              return (
+                <button
+                  key={tab}
+                  onClick={() => { setDirection(tab.toLowerCase()); setPage(1); }}
+                  className="px-3 py-1 text-xs font-medium transition-colors"
+                  style={{
+                    background: active ? "var(--bg-hover)" : "transparent",
+                    color: active ? "var(--text-primary)" : "var(--text-muted)",
+                  }}
+                >
+                  {tab}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
-      {/* Filter chips */}
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b" style={{ borderColor: "var(--border)" }}>
+      {/* Filter chips — desktop only */}
+      <div className="hidden md:flex flex-wrap items-center gap-2 px-4 py-2 border-b" style={{ borderColor: "var(--border)" }}>
         {/* Wallet type filters */}
         {WALLET_TYPES.map((wt) => {
           const active = walletTypes.has(wt);
@@ -211,7 +371,7 @@ export function TransactionsTable({ poolAddress }: TransactionsTableProps) {
       </div>
 
       {/* Table */}
-      <div className="overflow-auto" style={{ maxHeight: 500 }}>
+      <div className="overflow-auto flex-1 min-h-0">
         <table className="w-full text-xs">
           <thead>
             <tr style={{ background: "var(--bg-secondary)" }}>

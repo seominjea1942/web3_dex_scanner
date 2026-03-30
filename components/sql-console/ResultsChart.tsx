@@ -265,7 +265,7 @@ export function ResultsChart({ columns, rows, presetId }: ResultsChartProps) {
             <YAxis
               dataKey={xKey}
               type="category"
-              width={80}
+              width={60}
               tick={axisTickStyle}
               tickLine={false}
               axisLine={false}
@@ -308,10 +308,12 @@ export function ResultsChart({ columns, rows, presetId }: ResultsChartProps) {
 
   // ── Line Chart ─────────────────────────────────────────────
   if (type === "line") {
+    const lineMinWidth = Math.max(data.length * 40 + 80, 300);
     return (
-      <div style={{ width: "100%", height: 300 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+      <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+        <div style={{ width: "100%", minWidth: lineMinWidth, height: 300 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
             <CartesianGrid stroke="#222222" strokeDasharray="3 3" strokeOpacity={0.3} />
             <XAxis
               dataKey={xKey}
@@ -350,54 +352,61 @@ export function ResultsChart({ columns, rows, presetId }: ResultsChartProps) {
               />
             ))}
           </LineChart>
-        </ResponsiveContainer>
+          </ResponsiveContainer>
+        </div>
       </div>
     );
   }
 
   // ── Vertical Bar Chart ─────────────────────────────────────
+  const barMinWidth = Math.max(data.length * 70 + 80, 300);
   return (
-    <div style={{ width: "100%", height: 300 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
-          <CartesianGrid stroke="#222222" strokeDasharray="3 3" strokeOpacity={0.3} />
-          <XAxis
-            dataKey={xKey}
-            tick={axisTickStyle}
-            tickLine={false}
-            axisLine={{ stroke: "#222222" }}
-            tickFormatter={(v) => shortenLabel(String(v))}
-          />
-          <YAxis
-            width={50}
-            tick={axisTickStyle}
-            tickLine={false}
-            axisLine={{ stroke: "#222222" }}
-            tickFormatter={(v) => formatTickValue(v)}
-          />
-          <Tooltip
-            contentStyle={tooltipStyle.contentStyle}
-            itemStyle={tooltipStyle.itemStyle}
-            labelStyle={tooltipStyle.labelStyle}
-            formatter={(value: number, name: string) => ["$" + formatCompact(value), name]}
-            cursor={{ fill: "rgba(255,255,255,0.04)" }}
-          />
-          {yKeys.map((key, idx) => (
-            <Bar
-              key={key}
-              dataKey={key}
-              radius={[4, 4, 0, 0] as unknown as number}
-              name={key}
-              fill={COLORS[idx]}
-              barSize={40}
-            >
-              {data.map((_, entryIdx) => (
-                <Cell key={entryIdx} fill={COLORS[idx]} opacity={0.85} />
-              ))}
-            </Bar>
-          ))}
-        </BarChart>
-      </ResponsiveContainer>
+    <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+      <div style={{ width: "100%", minWidth: barMinWidth, height: 300 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+            <CartesianGrid stroke="#222222" strokeDasharray="3 3" strokeOpacity={0.3} />
+            <XAxis
+              dataKey={xKey}
+              tick={{ ...axisTickStyle, fontSize: 10 }}
+              tickLine={false}
+              axisLine={{ stroke: "#222222" }}
+              tickFormatter={(v) => shortenLabel(String(v), 12)}
+              angle={-35}
+              textAnchor="end"
+              height={40}
+            />
+            <YAxis
+              width={50}
+              tick={axisTickStyle}
+              tickLine={false}
+              axisLine={{ stroke: "#222222" }}
+              tickFormatter={(v) => formatTickValue(v)}
+            />
+            <Tooltip
+              contentStyle={tooltipStyle.contentStyle}
+              itemStyle={tooltipStyle.itemStyle}
+              labelStyle={tooltipStyle.labelStyle}
+              formatter={(value: number, name: string) => ["$" + formatCompact(value), name]}
+              cursor={{ fill: "rgba(255,255,255,0.04)" }}
+            />
+            {yKeys.map((key, idx) => (
+              <Bar
+                key={key}
+                dataKey={key}
+                radius={[4, 4, 0, 0] as unknown as number}
+                name={key}
+                fill={COLORS[idx]}
+                barSize={32}
+              >
+                {data.map((_, entryIdx) => (
+                  <Cell key={entryIdx} fill={COLORS[idx]} opacity={0.85} />
+                ))}
+              </Bar>
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

@@ -190,12 +190,12 @@ export default function PoolDetailPage() {
               </div>
             )}
             {mobileSection === "chart" && (
-              <div className="flex flex-col p-4 gap-4" style={{ background: "var(--bg-sidebar)", minHeight: "calc(100vh - 54px - 56px)" }}>
+              <div className="flex flex-col p-4 gap-3 overflow-hidden" style={{ background: "var(--bg-sidebar)", height: "calc(100vh - 94px - 56px)" }}>
                 <CandlestickChart poolAddress={poolAddress} timeRange={timeRange} onTimeRangeChange={setTimeRange} mobileFullHeight />
               </div>
             )}
             {mobileSection === "transactions" && (
-              <div className="p-4">
+              <div className="p-4" style={{ height: "calc(100vh - 94px - 56px)" }}>
                 <TransactionsTable poolAddress={poolAddress} />
               </div>
             )}
