@@ -85,11 +85,13 @@ function timeAgo(ts: number): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-function isNewPool(poolCreatedAt: number | null | undefined): boolean {
+function isNewPool(poolCreatedAt: string | number | null | undefined): boolean {
   if (!poolCreatedAt) return false;
   const oneDayMs = 86_400_000;
-  // pool_created_at could be seconds or ms
-  const ts = poolCreatedAt > 1e12 ? poolCreatedAt : poolCreatedAt * 1000;
+  // pool_created_at could be ISO string, seconds, or ms
+  const raw = typeof poolCreatedAt === "string" ? new Date(poolCreatedAt).getTime() : poolCreatedAt;
+  if (isNaN(raw)) return false;
+  const ts = raw > 1e12 ? raw : raw * 1000;
   return Date.now() - ts < oneDayMs;
 }
 
@@ -701,11 +703,12 @@ function TokenRow({
               className="text-[10px]"
               style={{ color: "var(--text-muted)" }}
             >
-              {timeAgo(
-                token.pool_created_at > 1e12
-                  ? token.pool_created_at
-                  : token.pool_created_at * 1000
-              )}{" "}
+              {(() => {
+                const raw = typeof token.pool_created_at === "string"
+                  ? new Date(token.pool_created_at).getTime()
+                  : token.pool_created_at;
+                return timeAgo(raw > 1e12 ? raw : raw * 1000);
+              })()}{" "}
               ago
             </span>
           )}
