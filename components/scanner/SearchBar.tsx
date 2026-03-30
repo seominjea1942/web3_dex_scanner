@@ -320,11 +320,15 @@ export function SearchBar({}: SearchBarProps) {
       {/* ── Dropdown ──────────────────────────────────── */}
       {showDropdown && (showTrending || hasQuery) && (
         <div
-          className="absolute top-full left-0 mt-1.5 z-50 rounded-xl border overflow-hidden flex flex-col w-[calc(100vw-2rem)] md:w-auto md:min-w-[460px] max-h-[calc(100vh-var(--search-dropdown-top,300px)-1rem)] md:max-h-[520px]"
+          className="absolute top-full left-0 mt-1.5 z-50 rounded-xl border overflow-hidden flex flex-col w-[calc(100vw-2rem)] md:w-auto md:min-w-[460px] md:max-h-[520px]"
           ref={(el) => {
-            if (el) {
+            if (el && window.innerWidth < 768) {
               const top = el.getBoundingClientRect().top;
-              el.style.setProperty("--search-dropdown-top", `${top}px`);
+              // Use visualViewport.height (accounts for browser chrome + keyboard on mobile)
+              // Falls back to window.innerHeight if visualViewport not available
+              const viewportH = window.visualViewport?.height ?? window.innerHeight;
+              const maxH = viewportH - top - 16; // 16px bottom breathing room
+              el.style.maxHeight = `${Math.max(maxH, 200)}px`;
             }
           }}
           style={{
