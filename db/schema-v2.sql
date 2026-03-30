@@ -1,5 +1,5 @@
--- CHAINSCOPE v2 Schema — Use Case Driven Data
--- Target: Instance B (local TiDB or new TiDB Cloud cluster)
+-- CHAINSCOPE v2.1 Schema
+-- Target: TiDB Cloud Serverless (chainscope database)
 
 CREATE DATABASE IF NOT EXISTS chainscope;
 USE chainscope;
@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS tokens (
   symbol VARCHAR(32),
   decimals INT,
   logo_url VARCHAR(256),
+  search_popularity INT DEFAULT 0,
+  embedding VECTOR(1536),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FULLTEXT INDEX idx_tokens_name_ft (name) WITH PARSER STANDARD
 );
@@ -23,6 +25,7 @@ CREATE TABLE IF NOT EXISTS pools (
   token_base_symbol VARCHAR(32),
   token_quote_symbol VARCHAR(32),
   dex VARCHAR(32),
+  pool_type VARCHAR(20) DEFAULT 'AMM',
   price_usd DECIMAL(20, 10),
   volume_5m DECIMAL(16, 2),
   volume_1h DECIMAL(16, 2),
@@ -48,6 +51,8 @@ CREATE TABLE IF NOT EXISTS pools (
   INDEX idx_dex (dex),
   INDEX idx_base_token (token_base_address),
   INDEX idx_price_change (price_change_5m DESC),
+  INDEX idx_price_change_24h (price_change_24h DESC),
+  INDEX idx_screener_composite (volume_24h, liquidity_usd, pool_created_at),
   FULLTEXT INDEX idx_pools_symbol_ft (token_base_symbol) WITH PARSER STANDARD
 );
 
@@ -68,8 +73,9 @@ CREATE TABLE IF NOT EXISTS pool_snapshots (
 );
 
 -- Swap transactions (generated, constrained by real pool volumes)
+-- AUTO_RANDOM distributes writes across TiKV regions — avoids write hotspot
 CREATE TABLE IF NOT EXISTS swap_transactions (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id BIGINT AUTO_RANDOM PRIMARY KEY,
   signature VARCHAR(128),
   timestamp BIGINT NOT NULL,
   pool_address VARCHAR(64) NOT NULL,
@@ -108,9 +114,13 @@ CREATE TABLE IF NOT EXISTS token_safety (
   token_address VARCHAR(64) PRIMARY KEY,
   holder_count INT,
   top10_holder_pct DECIMAL(5, 2),
-  lp_locked BOOLEAN,
+  lp_locked BOOLEAN DEFAULT FALSE,
   is_suspicious BOOLEAN DEFAULT FALSE,
-  safety_score INT
+  is_mintable BOOLEAN DEFAULT FALSE,
+  is_freezable BOOLEAN DEFAULT FALSE,
+  is_verified BOOLEAN DEFAULT FALSE,
+  is_lp_burned BOOLEAN DEFAULT FALSE,
+  risk_score INT DEFAULT 0
 );
 
 -- DeFi events (derived from transactions + real events)
@@ -119,7 +129,7 @@ CREATE TABLE IF NOT EXISTS defi_events (
   timestamp BIGINT NOT NULL,
   pool_address VARCHAR(64),
   dex VARCHAR(32),
-  event_type ENUM('whale', 'large_trade', 'smart_money', 'liquidity_add', 'liquidity_remove', 'new_pool'),
+  event_type ENUM('swap', 'whale', 'large_trade', 'smart_money', 'liquidity_add', 'liquidity_remove', 'new_pool'),
   severity ENUM('high', 'medium', 'low'),
   trader_wallet VARCHAR(64),
   usd_value DECIMAL(16, 2),
@@ -174,4 +184,55 @@ CREATE TABLE IF NOT EXISTS event_templates (
   dex_name VARCHAR(50),
   tx_hash VARCHAR(128),
   collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Live pool stats (unique traders, txn count — derived from swap_transactions)
+CREATE TABLE IF NOT EXISTS pool_stats_live (
+  pool_address VARCHAR(64) PRIMARY KEY,
+  txn_count_24h INT DEFAULT 0,
+  unique_traders_24h INT DEFAULT 0,
+  buy_sell_ratio DECIMAL(10, 4) DEFAULT 1.0,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Market behavior embeddings (32-dim vectors from pool metrics)
+-- Used by /api/pool/[addr]/similar?mode=behavior
+CREATE TABLE IF NOT EXISTS pattern_embeddings (
+  pool_address VARCHAR(64) PRIMARY KEY,
+  token_base_address VARCHAR(64),
+  token_base_symbol VARCHAR(32),
+  token_quote_symbol VARCHAR(32),
+  pair_name VARCHAR(64),
+  dex VARCHAR(32),
+  chain VARCHAR(20) DEFAULT 'solana',
+  embedding VECTOR(32),
+  volume_24h DECIMAL(16, 2),
+  liquidity_usd DECIMAL(16, 2),
+  market_cap BIGINT,
+  price_usd DECIMAL(20, 10),
+  price_change_1h DECIMAL(10, 4),
+  price_change_6h DECIMAL(10, 4),
+  price_change_24h DECIMAL(10, 4),
+  embedding_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_chain (chain),
+  INDEX idx_volume (volume_24h DESC)
+);
+
+-- Chart shape embeddings (32-dim vectors from OHLCV candlestick patterns)
+-- Used by /api/pool/[addr]/similar?mode=shape (default)
+CREATE TABLE IF NOT EXISTS pattern_shape_embeddings (
+  pool_address VARCHAR(64) PRIMARY KEY,
+  token_base_symbol VARCHAR(32),
+  token_quote_symbol VARCHAR(32),
+  pair_name VARCHAR(64),
+  dex VARCHAR(32),
+  embedding VECTOR(32),
+  volume_24h DECIMAL(16, 2),
+  liquidity_usd DECIMAL(16, 2),
+  price_usd DECIMAL(20, 10),
+  price_change_24h DECIMAL(10, 4),
+  ohlcv_source VARCHAR(32),
+  candle_count INT,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_volume (volume_24h DESC)
 );
