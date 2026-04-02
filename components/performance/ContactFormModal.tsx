@@ -224,7 +224,7 @@ export function ContactFormModal({ open, onClose }: ContactFormModalProps) {
                 Thank you!
               </h3>
               <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-                We&apos;ll be in touch within 24 hours.
+                We&apos;ll be in touch soon.
               </p>
             </div>
           ) : (
