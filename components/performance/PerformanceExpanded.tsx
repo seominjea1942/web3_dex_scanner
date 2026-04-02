@@ -11,6 +11,7 @@ import { useWorkloadContext } from "@/hooks/useWorkloadContext";
 import { useSharedMetrics } from "@/hooks/useSharedMetrics";
 import { formatCompact } from "@/lib/format";
 import type { TimeRange } from "@/lib/types";
+import { ContactFormModal } from "./ContactFormModal";
 
 interface MetricsHistory {
   series: Record<string, Array<{ time: string; value: number }>>;
@@ -25,6 +26,7 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
   const bp = useBreakpoint();
   const wc = useWorkloadContext();
   const [range, setRange] = useState<TimeRange>("1H");
+  const [contactOpen, setContactOpen] = useState(false);
 
   const { data } = usePolling<MetricsHistory>(
     () => fetch(`/api/metrics/history?range=${range}`).then((r) => r.json()),
@@ -144,7 +146,7 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
             )}
             <MetricCard label="Write Throughput" value={`${((m.write_throughput ?? 15000)).toLocaleString()}`} unit="rows/sec" data={spark.write_throughput} color="var(--accent-green)" mobile={bp === "mobile"} />
             <MetricCard label="Query Latency P99" value={`${(m.query_latency ?? 3.2).toFixed(1)}`} unit="ms" data={spark.query_latency} color="var(--accent-orange)" domainMin={0} domainMax={10} mobile={bp === "mobile"} />
-            <MetricCard label="QPS" value={`${(m.qps ?? 10000).toLocaleString()}`} unit="" data={spark.qps} color="var(--accent-blue)" mobile={bp === "mobile"} />
+            <MetricCard label="QPS" value={`${(m.qps ?? 10000).toLocaleString()}`} unit="R 35% · W 65%" data={spark.qps} color="var(--accent-blue)" mobile={bp === "mobile"} />
             <MetricCard label="Active Connections" value={`${(m.active_connections ?? 1500).toLocaleString()}`} unit="" data={spark.active_connections} color="var(--accent-teal)" mobile={bp === "mobile"} />
             <MetricCard label="Total Records" value={`${(totalRows + 1000000).toLocaleString()}`} unit="rows" color="var(--accent-green)" />
             <MetricCard label="Uptime" value="99.97%" unit="" color="var(--accent-green)" />
@@ -318,19 +320,6 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
 
           <div className="h-px" style={{ background: "var(--border)", marginTop: 48, marginBottom: 48 }} />
 
-          {/* Feature Comparison Table */}
-          <div>
-            <h3 className="font-bold mb-2 text-center" style={{ color: "var(--text-primary)", fontSize: 32 }}>Why TiDB for Web3?</h3>
-            <p className="text-sm mb-4 text-center" style={{ color: "var(--text-secondary)" }}>
-              The only MySQL-compatible, open-source database with native HTAP, full-text search, and vector search in a single cluster.
-            </p>
-            <div className="rounded-xl border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}>
-              <FeatureComparisonTable mobile={bp === "mobile"} />
-            </div>
-          </div>
-
-          <div className="h-px" style={{ background: "var(--border)", marginTop: 48, marginBottom: 48 }} />
-
           {/* Already on MySQL? You're ready. */}
           <div>
             <h3 className="font-bold mb-2 text-center" style={{ color: "var(--text-primary)", fontSize: 32 }}>Already on MySQL? You&apos;re ready.</h3>
@@ -426,12 +415,10 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
               </a>
 
               {/* Card 4: Migrating from another stack */}
-              <a
-                href="https://www.pingcap.com/contact/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-xl border p-5 flex flex-col justify-between transition-colors duration-200 no-underline"
-                style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}
+              <button
+                onClick={() => setContactOpen(true)}
+                className="rounded-xl border p-5 flex flex-col justify-between transition-colors duration-200 text-left"
+                style={{ background: "var(--bg-card)", borderColor: "var(--border)", cursor: "pointer" }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
               >
@@ -452,7 +439,7 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
                 <div className="font-medium mt-5 inline-flex items-center gap-1" style={{ color: "var(--accent-teal)", fontSize: 14 }}>
                   Talk to Our Team →
                 </div>
-              </a>
+              </button>
             </div>
 
             {/* CTA Bar */}
@@ -463,21 +450,33 @@ export function PerformanceExpanded({ onCollapse }: PerformanceExpandedProps) {
                   Review your current stack with our team — identify risk areas and map a validation path before cutover.
                 </p>
               </div>
-              <a
-                href="https://www.pingcap.com/contact/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`shrink-0 ${bp === "mobile" ? "self-start" : "ml-6"} px-6 py-2.5 rounded-full border text-sm font-medium transition-colors duration-200 no-underline`}
-                style={{ borderColor: "var(--text-muted)", color: "var(--text-primary)" }}
+              <button
+                onClick={() => setContactOpen(true)}
+                className={`shrink-0 ${bp === "mobile" ? "self-start" : "ml-6"} px-6 py-2.5 rounded-full border text-sm font-medium transition-colors duration-200`}
+                style={{ borderColor: "var(--text-muted)", color: "var(--text-primary)", background: "none", cursor: "pointer" }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)"; e.currentTarget.style.color = "var(--accent-teal)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--text-muted)"; e.currentTarget.style.color = "var(--text-primary)"; }}
               >
                 Check Migration Fit →
-              </a>
+              </button>
+            </div>
+          </div>
+
+          <div className="h-px" style={{ background: "var(--border)", marginTop: 48, marginBottom: 48 }} />
+
+          {/* Feature Comparison Table */}
+          <div>
+            <h3 className="font-bold mb-2 text-center" style={{ color: "var(--text-primary)", fontSize: 32 }}>Why TiDB for Web3?</h3>
+            <p className="text-sm mb-4 text-center" style={{ color: "var(--text-secondary)" }}>
+              The only MySQL-compatible, open-source database with native HTAP, full-text search, and vector search in a single cluster.
+            </p>
+            <div className="rounded-xl border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}>
+              <FeatureComparisonTable mobile={bp === "mobile"} />
             </div>
           </div>
         </div>
       </div>
+      <ContactFormModal open={contactOpen} onClose={() => setContactOpen(false)} />
     </div>
   );
 }

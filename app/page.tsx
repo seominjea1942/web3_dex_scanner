@@ -25,6 +25,9 @@ export default function Home() {
     <SharedEventsProvider>
     <SharedMetricsProvider>
     <main className="min-h-screen flex flex-col" style={{ background: "var(--bg-primary)" }}>
+      <div style={{ background: "var(--bg-secondary)", borderBottom: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, textAlign: "center", padding: "4px 0", letterSpacing: "0.02em" }}>
+        Data is simulated for demo purposes — pool and token metadata sourced from live Solana DEX data
+      </div>
       <Navbar activePage={activePage} onNavigate={(page) => setActivePage(page as "screener" | "sql-console")} />
       {activePage === "sql-console" ? (
         /* SQL Console — full width, no event sidebar */
